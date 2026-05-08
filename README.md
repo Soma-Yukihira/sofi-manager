@@ -63,6 +63,16 @@ python main.py
 
 The GUI opens. Click **+ ADD BOT**, fill in your token + drop channel, **Save**, then **▶ Start**.
 
+### Optional · Pin to taskbar (Windows)
+
+```powershell
+.\tools\create-shortcut.ps1
+```
+
+This generates `Selfbot Manager.lnk` with the gold ⚜ icon. Drag it onto your
+taskbar (or right-click → *Pin to taskbar*) — launches the app without a
+console window.
+
 📖 **Full documentation in the [Wiki](../../wiki).**
 
 ---

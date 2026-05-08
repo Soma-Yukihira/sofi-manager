@@ -63,6 +63,16 @@ python main.py
 
 L'interface s'ouvre. Clique **+ AJOUTER UN BOT**, remplis ton token + drop channel, **Sauvegarder**, puis **▶ Démarrer**.
 
+### Optionnel · Épingler à la barre des tâches (Windows)
+
+```powershell
+.\tools\create-shortcut.ps1
+```
+
+Ça génère `Selfbot Manager.lnk` avec l'icône ⚜ dorée. Glisse-le sur la
+barre des tâches (ou clic droit → *Épingler à la barre des tâches*) — l'app
+se lance sans fenêtre de console.
+
 📖 **Documentation complète dans le [Wiki](../../wiki).**
 
 ---

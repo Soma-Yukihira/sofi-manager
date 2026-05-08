@@ -254,6 +254,23 @@ class SelfbotManagerApp(ctk.CTk):
         self.geometry("1320x820")
         self.minsize(1100, 720)
 
+        # Icône fenêtre + taskbar (Windows : grouping basé sur app id)
+        icon_path = Path(__file__).parent / "assets" / "app.ico"
+        if icon_path.exists():
+            try:
+                self.iconbitmap(default=str(icon_path))
+            except Exception:
+                pass
+            try:
+                # Force Windows à utiliser une AppUserModelID dédiée
+                # → le taskbar regroupe sous notre icône au lieu de pythonw.exe
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    "Soma-Yukihira.SelfbotManager.1"
+                )
+            except Exception:
+                pass
+
         # bot_id -> {"config", "instance", "entry", "log_widget", "log_scroll", "log_buffer"}
         self.bots: dict = {}
         self.selected_id: str | None = None

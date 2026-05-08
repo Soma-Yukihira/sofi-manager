@@ -65,6 +65,26 @@ python main.py
 La fenêtre s'ouvre. Le premier run ne crée aucun fichier — `bots.json` et
 `settings.json` apparaissent quand tu ajoutes un bot ou changes un réglage.
 
+### 5. Optionnel · épingler à la barre des tâches (Windows)
+
+Pour lancer l'app comme n'importe quelle autre appli Windows — pas de
+terminal, juste une icône dans la taskbar — génère un raccourci une fois :
+
+```powershell
+.\tools\create-shortcut.ps1
+```
+
+Ça crée `Selfbot Manager.lnk` à la racine du projet avec l'icône ⚜ dorée,
+pointant sur `pythonw.exe` (donc pas de fenêtre noire qui flashe).
+
+Ensuite :
+
+- **glisse-dépose** le `.lnk` sur la barre des tâches, ou
+- clic droit → *Afficher plus d'options* → *Épingler à la barre des tâches*
+
+Le raccourci est régénéré par le script à partir de ton chemin venv local,
+donc il est gitignoré — relance le script si tu déplaces le projet.
+
 ## Récupérer un token
 
 1. Ouvre Discord dans un navigateur. Connecte-toi.
