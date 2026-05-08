@@ -1,0 +1,5 @@
+# Force LF line endings for shell scripts so they execute on Linux/macOS
+# even when committed from a Windows machine where autocrlf is true.
+*.sh text eol=lf
+tools/install-systemd.sh text eol=lf
+tools/update.sh           text eol=lf

@@ -79,12 +79,28 @@ To pull the latest version while keeping all your local config (tokens,
 themes, bots) untouched:
 
 ```powershell
-.\tools\update.ps1
+.\tools\update.ps1                    # Windows
+./tools/update.sh                     # Linux / macOS
 ```
 
 The script `git pull`s, refreshes Python deps if `requirements.txt` changed,
 and prints a summary. Your `bots.json` and `settings.json` are gitignored,
 so nothing local is lost.
+
+### Headless / VPS
+
+For servers without a display, a CLI shares the same `bots.json` and core:
+
+```bash
+python cli.py add                     # interactive bot wizard
+python cli.py list                    # show configured bots
+python cli.py run                     # run all in the foreground
+sudo ./tools/install-systemd.sh       # one-shot systemd service installer
+```
+
+See the [VPS Deployment wiki page](../../wiki/VPS-Deployment) for the full
+guide, including `tmux`, `systemd` hardening, and pushing config from the
+GUI to the server.
 
 📖 **Full documentation in the [Wiki](../../wiki).**
 
@@ -95,8 +111,10 @@ so nothing local is lost.
 ```
 sofi-manager/
 ├── main.py              # GUI launcher
+├── cli.py               # Headless / VPS launcher (same core)
 ├── gui.py               # CustomTkinter interface + theme system
 ├── bot_core.py          # SelfBot class + parsing/scoring logic
+├── tools/               # update / install-shortcut / install-systemd
 ├── requirements.txt     # discord.py-self, customtkinter
 ├── docs/
 │   ├── wiki/            # Wiki source pages (EN + FR)
