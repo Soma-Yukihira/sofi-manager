@@ -39,8 +39,6 @@
 
 ## 📸 Captures d'écran
 
-> _Ajoute tes captures dans `docs/images/` puis référence-les ici._
-
 |                                 |                                |
 | :-----------------------------: | :----------------------------: |
 | ![Mode sombre](docs/images/screenshot-dark.png) | ![Mode clair](docs/images/screenshot-light.png) |

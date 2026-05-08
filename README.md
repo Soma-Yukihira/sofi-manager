@@ -39,8 +39,6 @@
 
 ## 📸 Screenshots
 
-> _Add your screenshots in `docs/images/` and reference them here._
-
 |                                 |                                |
 | :-----------------------------: | :----------------------------: |
 | ![Dark mode](docs/images/screenshot-dark.png) | ![Light mode](docs/images/screenshot-light.png) |
