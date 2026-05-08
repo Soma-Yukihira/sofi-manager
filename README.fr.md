@@ -73,6 +73,19 @@ L'interface s'ouvre. Clique **+ AJOUTER UN BOT**, remplis ton token + drop chann
 barre des tâches (ou clic droit → *Épingler à la barre des tâches*) — l'app
 se lance sans fenêtre de console.
 
+### Mettre à jour
+
+Pour récupérer la dernière version sans perdre ta config locale (tokens,
+thème, bots) :
+
+```powershell
+.\tools\update.ps1
+```
+
+Le script fait un `git pull`, rafraîchit les dépendances Python si
+`requirements.txt` a changé et imprime un résumé. `bots.json` et
+`settings.json` sont gitignorés donc rien de local n'est touché.
+
 📖 **Documentation complète dans le [Wiki](../../wiki).**
 
 ---

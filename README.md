@@ -73,6 +73,19 @@ This generates `Selfbot Manager.lnk` with the gold ⚜ icon. Drag it onto your
 taskbar (or right-click → *Pin to taskbar*) — launches the app without a
 console window.
 
+### Updating
+
+To pull the latest version while keeping all your local config (tokens,
+themes, bots) untouched:
+
+```powershell
+.\tools\update.ps1
+```
+
+The script `git pull`s, refreshes Python deps if `requirements.txt` changed,
+and prints a summary. Your `bots.json` and `settings.json` are gitignored,
+so nothing local is lost.
+
 📖 **Full documentation in the [Wiki](../../wiki).**
 
 ---
