@@ -1,0 +1,121 @@
+<div align="center">
+
+<img src="docs/images/banner.svg" alt="SOFI Manager" width="100%">
+
+<p>
+  <a href="README.md">English</a> ·
+  <a href="README.fr.md"><b>Français</b></a>
+</p>
+
+<p><i>Interface premium black &amp; gold pour orchestrer plusieurs selfbots Discord SOFI en parallèle.</i></p>
+
+<p>
+  <img src="https://img.shields.io/badge/python-3.10%2B-d4af37?style=flat-square&labelColor=0a0a0a" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/license-MIT-d4af37?style=flat-square&labelColor=0a0a0a" alt="Licence MIT">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-d4af37?style=flat-square&labelColor=0a0a0a" alt="Multi-plateforme">
+  <img src="https://img.shields.io/badge/UI-CustomTkinter-d4af37?style=flat-square&labelColor=0a0a0a" alt="CustomTkinter">
+</p>
+
+</div>
+
+> [!WARNING]
+> **Les selfbots violent les [Conditions d'utilisation Discord](https://discord.com/terms).**
+> Utiliser ce projet sur ton compte peut entraîner une suspension ou un bannissement définitif.
+> Ce projet est fourni à titre éducatif — **à tes risques et périls**.
+
+---
+
+## ✨ Fonctionnalités
+
+- 🪶 **Multi-bot** — gère plusieurs selfbots depuis une seule fenêtre, chacun avec son thread, sa boucle asyncio et sa config
+- 🎴 **Sélection intelligente** — scoring rareté + popularité avec override wishlist (personnages & séries)
+- 🌙 **Pause nocturne** — fenêtre de sommeil aléatoire entre 22h et 01h pour imiter un humain
+- 🌍 **Détection SOFI multilingue** — messages drop & cooldown analysés en **français et anglais**
+- 🎨 **Thèmes premium** — presets sombre et clair + personnalisation couleur par couleur (17 slots)
+- 📜 **Logs en direct** — console colorée par bot avec un flux diagnostic de tous les messages SOFI reçus
+- 💾 **Local first** — config et tokens restent sur disque dans `bots.json`, rien n'est envoyé ailleurs
+
+---
+
+## 📸 Captures d'écran
+
+> _Ajoute tes captures dans `docs/images/` puis référence-les ici._
+
+|                                 |                                |
+| :-----------------------------: | :----------------------------: |
+| ![Mode sombre](docs/images/screenshot-dark.png) | ![Mode clair](docs/images/screenshot-light.png) |
+| _Preset sombre_                 | _Preset clair_                 |
+
+---
+
+## 🚀 Démarrage rapide
+
+```bash
+git clone https://github.com/Soma-Yukihira/sofi-manager.git
+cd sofi-manager
+python -m venv env
+# Windows
+.\env\Scripts\activate
+# macOS / Linux
+# source env/bin/activate
+
+pip install -r requirements.txt
+python main.py
+```
+
+L'interface s'ouvre. Clique **+ AJOUTER UN BOT**, remplis ton token + drop channel, **Sauvegarder**, puis **▶ Démarrer**.
+
+📖 **Documentation complète dans le [Wiki](../../wiki).**
+
+---
+
+## 📂 Structure du projet
+
+```
+sofi-manager/
+├── main.py              # Point d'entrée GUI
+├── gui.py               # Interface CustomTkinter + système de thèmes
+├── bot_core.py          # Classe SelfBot + parsing/scoring
+├── requirements.txt     # discord.py-self, customtkinter
+├── docs/
+│   ├── wiki/            # Sources des pages wiki (EN + FR)
+│   └── images/          # Bannière + captures
+└── LICENSE              # MIT
+```
+
+`bots.json` (tokens) et `settings.json` (préférences thème) sont créés au
+premier lancement et gitignorés.
+
+---
+
+## 📚 Documentation
+
+Le [Wiki](../../wiki) couvre chaque sujet en détail :
+
+| Page | Contenu |
+| ---- | ------- |
+| [Installation](../../wiki/Installation-fr) | Setup Python, venv, dépendances |
+| [Configuration](../../wiki/Configuration-fr) | Chaque champ du GUI expliqué |
+| [Thèmes](../../wiki/Theming-fr) | Presets et personnalisation 17 couleurs |
+| [Architecture](../../wiki/Architecture-fr) | Comment bots, threads et event loops sont câblés |
+| [Dépannage](../../wiki/Troubleshooting-fr) | Erreurs courantes + log debug `📥 SOFI:` |
+| [Avis ToS Discord](../../wiki/Discord-ToS-fr) | Risques et conséquences possibles |
+
+---
+
+## 🤝 Contribuer
+
+Les PR sont les bienvenues. Lis [CONTRIBUTING.fr.md](CONTRIBUTING.fr.md) avant d'en ouvrir une.
+
+Pour un bug, ouvre une [issue](../../issues/new) en y collant les lignes
+`📥 SOFI:` de ton run — elles pointent immédiatement les changements de
+format côté SOFI.
+
+---
+
+## 📄 Licence
+
+[MIT](LICENSE) © Soma-Yukihira.
+
+Ce logiciel est fourni "tel quel", sans garantie d'aucune sorte. En l'utilisant,
+tu reconnais les risques décrits dans l'avertissement ci-dessus.

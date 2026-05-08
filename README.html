@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>⚜ Selfbot Manager</title>
+<style>
+  :root {
+    --bg:        #0a0a0a;
+    --panel:     #141414;
+    --panel-2:   #1c1c1c;
+    --border:    #2a2a2a;
+    --accent:    #d4af37;
+    --accent-br: #f4d03f;
+    --accent-dm: #8b7320;
+    --text:      #e8e8e8;
+    --text-dim:  #8a8a8a;
+    --success:   #4ade80;
+    --error:     #f87171;
+    --warn:      #fbbf24;
+    --info:      #9ca3af;
+  }
+  html.light {
+    --bg:        #f4f1ea;
+    --panel:     #ffffff;
+    --panel-2:   #f5f3ee;
+    --border:    #e5e2da;
+    --accent:    #b8860b;
+    --accent-br: #d4af37;
+    --accent-dm: #8b7320;
+    --text:      #1f1f1f;
+    --text-dim:  #6b6b6b;
+    --success:   #16a34a;
+    --error:     #dc2626;
+    --warn:      #d97706;
+    --info:      #525252;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                  Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+    font-size: 16px;
+  }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 56px 32px 96px; }
+
+  /* Top bar */
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 22px; border-bottom: 1px solid var(--border);
+    margin-bottom: 36px;
+  }
+  .brand { color: var(--accent); font-weight: 800; letter-spacing: 1px; font-size: 13px; }
+  .brand small { color: var(--text-dim); font-weight: 800; margin-left: 8px; }
+  .toggle {
+    background: var(--panel); border: 1px solid var(--accent-dm);
+    color: var(--accent); padding: 8px 14px; border-radius: 6px;
+    cursor: pointer; font-weight: 700; font-size: 12px;
+    transition: all .15s ease;
+  }
+  .toggle:hover { background: var(--panel-2); border-color: var(--accent); }
+
+  /* Headings */
+  h1, h2, h3 { color: var(--text); font-weight: 700; line-height: 1.25; }
+  h1 {
+    font-size: 36px; margin: 0 0 8px;
+    background: linear-gradient(90deg, var(--accent-br), var(--accent));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  h2 {
+    font-size: 22px; margin: 48px 0 16px;
+    padding-left: 12px; border-left: 3px solid var(--accent);
+  }
+  h3 { font-size: 16px; margin: 28px 0 10px; color: var(--accent); letter-spacing: .3px; }
+
+  .lead {
+    color: var(--text-dim); font-size: 16px; margin: 0 0 28px;
+    border-bottom: 1px solid var(--border); padding-bottom: 28px;
+  }
+
+  /* Text */
+  p { margin: 12px 0; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent-dm); }
+  a:hover { color: var(--accent-br); border-bottom-style: solid; }
+  strong { color: var(--text); font-weight: 700; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+
+  /* Lists */
+  ul, ol { margin: 12px 0; padding-left: 24px; }
+  li { margin: 6px 0; }
+  li::marker { color: var(--accent-dm); }
+
+  /* Code */
+  code {
+    font-family: "Consolas", "Cascadia Mono", "JetBrains Mono", monospace;
+    font-size: 13.5px;
+    background: var(--panel);
+    color: var(--accent-br);
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 16px 18px; border-radius: 6px;
+    overflow-x: auto; line-height: 1.5; margin: 14px 0;
+  }
+  pre code {
+    background: transparent; border: 0; padding: 0;
+    color: var(--text); font-size: 13px;
+  }
+
+  /* Tables */
+  table {
+    width: 100%; border-collapse: collapse; margin: 16px 0;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; overflow: hidden;
+  }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--panel-2); color: var(--accent); font-weight: 700; font-size: 13px; letter-spacing: .3px; }
+  tr:last-child td { border-bottom: 0; }
+  td code { font-size: 12.5px; }
+
+  /* Callouts */
+  .note {
+    background: var(--panel); border: 1px solid var(--border);
+    border-left: 3px solid var(--warn);
+    padding: 14px 18px; margin: 14px 0; border-radius: 6px;
+  }
+  .danger { border-left-color: var(--error); }
+  .danger strong { color: var(--error); }
+
+  /* Footer */
+  .foot {
+    margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border);
+    color: var(--text-dim); font-size: 12px; text-align: center;
+  }
+
+  /* Selection */
+  ::selection { background: var(--accent-dm); color: var(--bg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">⚜ SELFBOT MANAGER<small>· PREMIUM</small></div>
+    <button class="toggle" onclick="toggleTheme()" id="tg">☀ Clair</button>
+  </div>
+
+  <h1>⚜ Selfbot Manager</h1>
+  <p class="lead">
+    Application graphique pour gérer plusieurs selfbots Discord SOFI en parallèle.
+    Interface premium black &amp; gold, thème clair, couleurs personnalisables, logs en
+    direct par bot.
+  </p>
+
+  <h2>✨ Fonctionnalités</h2>
+  <ul>
+    <li>Plusieurs selfbots gérés depuis une seule interface (un thread par bot)</li>
+    <li>Tri automatique des wishlists (personnages et séries) à la sauvegarde</li>
+    <li>Détection multilingue des drops SOFI (FR / EN)</li>
+    <li>Pause nocturne aléatoire entre 22h et 01h</li>
+    <li>Système de scoring rareté + popularité avec override wishlist</li>
+    <li>Thèmes : preset sombre, preset clair, couleurs entièrement personnalisables</li>
+    <li>Logs colorés en temps réel par bot</li>
+  </ul>
+
+  <h2>📋 Prérequis</h2>
+  <ul>
+    <li><strong>Python 3.10+</strong> (testé sur 3.14)</li>
+    <li><strong>pip</strong> disponible dans le terminal</li>
+  </ul>
+  <p>Vérifier :</p>
+  <pre><code>python --version
+pip --version</code></pre>
+
+  <h2>🚀 Installation</h2>
+
+  <h3>1. Récupérer le projet</h3>
+  <p>Décompresser l'archive dans un dossier de ton choix, par exemple :</p>
+  <pre><code>C:\Users\TonNom\Documents\SELFBOT</code></pre>
+
+  <h3>2. Créer un environnement virtuel (recommandé)</h3>
+  <p>Ouvrir un terminal <strong>dans le dossier du projet</strong> :</p>
+  <pre><code>python -m venv env
+.\env\Scripts\activate</code></pre>
+  <div class="note">
+    Sous macOS / Linux : <code>source env/bin/activate</code>
+  </div>
+
+  <h3>3. Installer les dépendances</h3>
+  <pre><code>pip install -r requirements.txt</code></pre>
+  <p>Cela installe :</p>
+  <ul>
+    <li><code>discord.py-self</code> — client Discord (selfbot)</li>
+    <li><code>customtkinter</code> — moteur graphique premium</li>
+  </ul>
+
+  <h3>4. Lancer l'application</h3>
+  <pre><code>python main.py</code></pre>
+  <p>
+    L'interface s'ouvre. Aucune config n'est partagée — <code>bots.json</code> est créé
+    automatiquement à ton premier ajout de bot.
+  </p>
+
+  <h2>🎮 Utilisation</h2>
+
+  <h3>Ajouter un bot</h3>
+  <ol>
+    <li>Cliquer sur <strong>+ AJOUTER UN BOT</strong> (sidebar gauche)</li>
+    <li>Onglet <strong>Configuration</strong> :
+      <ul>
+        <li><strong>Nom</strong> : libre, pour t'y retrouver</li>
+        <li><strong>Token Discord</strong> : ton token (masqué)</li>
+        <li><strong>ID du salon de drop</strong> : où envoyer la commande <code>sd</code></li>
+        <li><strong>Salons écoutés</strong> : un ID par ligne — le drop channel est inclus automatiquement</li>
+      </ul>
+    </li>
+    <li>Onglet <strong>Wishlist</strong> : tes personnages favoris et séries favorites,
+      un par ligne (le tri se fait à la sauvegarde)</li>
+    <li>Cliquer <strong>Sauvegarder</strong>, puis <strong>▶ Démarrer</strong></li>
+  </ol>
+  <p>
+    L'onglet <strong>Logs</strong> s'ouvre automatiquement et tu vois en direct ce que
+    fait ton bot. Le statut du bot apparaît dans la sidebar (point vert = en marche).
+  </p>
+
+  <h3>Personnaliser le thème</h3>
+  <ul>
+    <li><strong>☀ Clair / 🌙 Sombre</strong> : bascule entre les deux presets</li>
+    <li>
+      <strong>🎨 Couleurs</strong> : ouvre la palette pour modifier chaque couleur
+      individuellement (fond, accent, succès, erreur, etc.). Cliquer sur une couleur
+      ouvre un sélecteur. <strong>Réinitialiser</strong> revient au preset courant.
+    </li>
+  </ul>
+  <p>Les préférences de thème sont stockées dans <code>settings.json</code>.</p>
+
+  <h3>Gérer plusieurs bots</h3>
+  <p>
+    Chaque bot a son propre thread, sa propre boucle asyncio et ses propres logs.
+    On peut les démarrer/arrêter indépendamment et basculer d'un bot à l'autre via
+    la sidebar.
+  </p>
+
+  <h2>📂 Structure du projet</h2>
+  <table>
+    <thead>
+      <tr><th>Fichier</th><th>Rôle</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>main.py</code></td><td>Point d'entrée — lance le GUI</td></tr>
+      <tr><td><code>gui.py</code></td><td>Interface CustomTkinter + système de thèmes</td></tr>
+      <tr><td><code>bot_core.py</code></td><td>Logique selfbot (parsing, scoring, drops, cooldown, pause)</td></tr>
+      <tr><td><code>requirements.txt</code></td><td>Dépendances Python</td></tr>
+      <tr><td><code>bots.json</code></td><td>Configs des bots (créé auto, contient les tokens)</td></tr>
+      <tr><td><code>settings.json</code></td><td>Préférences UI (thème, couleurs custom)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>⚠️ Sécurité</h2>
+  <div class="note danger">
+    <ul style="margin:0">
+      <li><strong>Les tokens sont stockés en clair dans <code>bots.json</code></strong> — ne partage jamais ce fichier ni ne le commit sur Git.</li>
+      <li><strong>Ne montre jamais ton token</strong> à quelqu'un, même un ami : il aurait un accès complet à ton compte Discord.</li>
+      <li>Les selfbots sont contre les ToS Discord. À tes risques.</li>
+    </ul>
+  </div>
+
+  <h2>🐛 Dépannage</h2>
+
+  <h3>« Token invalide »</h3>
+  <p>Le token a expiré ou est mal copié. Re-copie-le depuis Discord (DevTools → Network).</p>
+
+  <h3>Le bot ne détecte pas les drops</h3>
+  <p>
+    Regarde les lignes <code>📥 SOFI:</code> dans les logs : elles affichent ce que SOFI
+    envoie. Si le format a changé, signale-le.
+  </p>
+
+  <h3><code>ModuleNotFoundError: No module named 'discord'</code></h3>
+  <p>
+    L'environnement virtuel n'est pas activé ou les dépendances ne sont pas installées.
+    Refais l'étape 2 + 3.
+  </p>
+
+  <h3><code>ModuleNotFoundError: No module named 'customtkinter'</code></h3>
+  <p>Idem — <code>pip install -r requirements.txt</code> dans le venv activé.</p>
+
+  <div class="foot">
+    Premium dark &amp; gold · Thème clair · Couleurs personnalisables
+  </div>
+</div>
+
+<script>
+  (function () {
+    var saved = localStorage.getItem("selfbot-readme-theme");
+    if (saved === "light") {
+      document.documentElement.classList.add("light");
+      document.getElementById("tg").textContent = "🌙 Sombre";
+    }
+  })();
+  function toggleTheme() {
+    var h = document.documentElement;
+    var btn = document.getElementById("tg");
+    if (h.classList.toggle("light")) {
+      btn.textContent = "🌙 Sombre";
+      localStorage.setItem("selfbot-readme-theme", "light");
+    } else {
+      btn.textContent = "☀ Clair";
+      localStorage.setItem("selfbot-readme-theme", "dark");
+    }
+  }
+</script>
+</body>
+</html>

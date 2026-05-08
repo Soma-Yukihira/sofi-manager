@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" role="img" aria-label="SOFI Manager">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#0a0a0a"/>
+      <stop offset="50%" stop-color="#141414"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#8b7320"/>
+      <stop offset="35%"  stop-color="#d4af37"/>
+      <stop offset="65%"  stop-color="#f4d03f"/>
+      <stop offset="100%" stop-color="#8b7320"/>
+    </linearGradient>
+    <linearGradient id="goldDim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#5a4a18"/>
+      <stop offset="50%"  stop-color="#8b7320"/>
+      <stop offset="100%" stop-color="#5a4a18"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="320" fill="url(#bg)"/>
+
+  <!-- subtle diagonal lines -->
+  <g opacity="0.06" stroke="#d4af37" stroke-width="1">
+    <line x1="0"   y1="60"  x2="1280" y2="60"/>
+    <line x1="0"   y1="260" x2="1280" y2="260"/>
+  </g>
+
+  <!-- gold rule top/bottom -->
+  <rect x="64" y="56"  width="1152" height="2" fill="url(#goldDim)"/>
+  <rect x="64" y="262" width="1152" height="2" fill="url(#goldDim)"/>
+
+  <!-- crest / fleur ⚜ -->
+  <g transform="translate(140 160)" filter="url(#glow)">
+    <text x="0" y="22" font-family="Georgia, 'Times New Roman', serif" font-size="92" fill="url(#gold)" text-anchor="middle">⚜</text>
+  </g>
+
+  <!-- title -->
+  <g font-family="Georgia, 'Times New Roman', serif">
+    <text x="220" y="148"
+          font-size="64"
+          font-weight="700"
+          letter-spacing="6"
+          fill="url(#gold)">SOFI MANAGER</text>
+    <text x="220" y="190"
+          font-size="18"
+          letter-spacing="8"
+          fill="#8a8a8a"
+          font-weight="700">PREMIUM · SELFBOT · BLACK &amp; GOLD</text>
+  </g>
+
+  <!-- decorative dots right -->
+  <g fill="#d4af37">
+    <circle cx="1140" cy="148" r="3"/>
+    <circle cx="1160" cy="148" r="3" opacity=".7"/>
+    <circle cx="1180" cy="148" r="3" opacity=".4"/>
+  </g>
+
+  <!-- tagline bottom right -->
+  <text x="1216" y="288"
+        font-family="Consolas, 'Courier New', monospace"
+        font-size="11"
+        letter-spacing="2"
+        fill="#8a8a8a"
+        text-anchor="end">v1.0 · MIT · python ≥ 3.10</text>
+</svg>
