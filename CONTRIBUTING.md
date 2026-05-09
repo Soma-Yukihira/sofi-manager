@@ -42,7 +42,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
-There is no test suite (yet). Smoke-test your changes manually:
+Run the lightweight core tests first:
+
+```bash
+python -m unittest
+```
+
+Then smoke-test UI changes manually:
 
 - Start the GUI, add a bot, save, restart — config persists.
 - Toggle dark/light theme, customize a color, restart — settings persist.

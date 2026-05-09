@@ -28,7 +28,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 
-from bot_core import SelfBot, default_config  # noqa: E402
+from bot_core import SelfBot, default_config, sanitize_config  # noqa: E402
 
 
 CONFIG_PATH = _HERE / "bots.json"
@@ -92,17 +92,20 @@ def load_bots() -> list[dict]:
     if not CONFIG_PATH.exists():
         return []
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8")).get("bots", [])
+        bots = json.loads(CONFIG_PATH.read_text(encoding="utf-8")).get("bots", [])
+        return [sanitize_config(bot) for bot in bots]
     except Exception as e:
         cprint(f"{Color.RED}Failed to read {CONFIG_PATH}: {e}{Color.RESET}")
         return []
 
 
 def save_bots(bots: list[dict]):
-    CONFIG_PATH.write_text(
-        json.dumps({"bots": bots}, indent=2, ensure_ascii=False),
+    tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+    tmp.write_text(
+        json.dumps({"bots": bots}, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    tmp.replace(CONFIG_PATH)
 
 
 def find_bot(bots, name_or_id: str):
@@ -222,6 +225,7 @@ def cmd_add(args):
         return 130
 
     cfg["_id"] = str(uuid.uuid4())
+    sanitize_config(cfg)
     bots.append(cfg)
     save_bots(bots)
 

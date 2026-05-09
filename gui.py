@@ -12,7 +12,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from bot_core import SelfBot, default_config
+from bot_core import SelfBot, default_config, sanitize_config
 
 
 # =============================================
@@ -97,6 +97,14 @@ CONFIG_PATH   = Path(__file__).parent / "bots.json"
 SETTINGS_PATH = Path(__file__).parent / "settings.json"
 
 
+def write_json_atomic(path: Path, data: dict):
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    tmp.replace(path)
+
+
 def load_bots():
     if not CONFIG_PATH.exists():
         return []
@@ -109,8 +117,7 @@ def load_bots():
 
 
 def save_bots(bots):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump({"bots": bots}, f, indent=2, ensure_ascii=False)
+    write_json_atomic(CONFIG_PATH, {"bots": bots})
 
 
 def load_settings():
@@ -128,8 +135,7 @@ def load_settings():
 
 
 def save_settings(settings):
-    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2, ensure_ascii=False)
+    write_json_atomic(SETTINGS_PATH, settings)
 
 
 def dedupe_sort(items):
@@ -713,6 +719,7 @@ class SelfbotManagerApp(ctk.CTk):
     def _load_existing_bots(self):
         for cfg in load_bots():
             # tri à l'import
+            sanitize_config(cfg)
             cfg["wishlist"] = dedupe_sort(cfg.get("wishlist", []))
             cfg["wishlist_series"] = dedupe_sort(cfg.get("wishlist_series", []))
             self._register_bot(cfg)
@@ -845,6 +852,7 @@ class SelfbotManagerApp(ctk.CTk):
 
         cfg["wishlist"] = dedupe_sort(self.wishlist_persos.get("1.0", "end").splitlines())
         cfg["wishlist_series"] = dedupe_sort(self.wishlist_series.get("1.0", "end").splitlines())
+        sanitize_config(cfg)
 
         self.bots[bot_id]["entry"].set_name(cfg.get("name", "Sans nom"))
 

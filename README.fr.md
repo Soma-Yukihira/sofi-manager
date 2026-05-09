@@ -117,6 +117,7 @@ sofi-manager/
 ├── bot_core.py          # Classe SelfBot + parsing/scoring
 ├── tools/               # update / install-shortcut / install-systemd
 ├── requirements.txt     # discord.py-self, customtkinter
+├── tests/               # tests unitaires légers du core
 ├── docs/
 │   ├── wiki/            # Sources des pages wiki (EN + FR)
 │   └── images/          # Bannière + captures

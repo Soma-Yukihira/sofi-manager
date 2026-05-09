@@ -10,6 +10,7 @@ import re
 import random
 import threading
 import queue
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
 
 import discord
@@ -42,6 +43,108 @@ def default_config() -> dict:
         "wishlist_series": [],
         "sofi_id": SOFI_ID,
     }
+
+
+def _as_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _as_int(value, default):
+    if isinstance(value, bool):
+        return int(default)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return int(default)
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _as_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        value = value.strip().lower()
+        if value in ("1", "true", "yes", "on", "oui"):
+            return True
+        if value in ("0", "false", "no", "off", "non"):
+            return False
+    return bool(default)
+
+
+def sanitize_config(cfg: dict) -> dict:
+    """Normalize runtime config in-place and return it.
+
+    The GUI intentionally stays permissive while typing. This guard keeps the
+    bot core from crashing or tight-looping if a saved numeric field is empty,
+    zero, inverted, or otherwise malformed.
+    """
+    defaults = default_config()
+    for key, value in defaults.items():
+        cfg.setdefault(key, value)
+
+    cfg["token"] = str(cfg.get("token") or "").strip()
+    cfg["name"] = str(cfg.get("name") or defaults["name"]).strip() or defaults["name"]
+    cfg["message"] = str(cfg.get("message") or defaults["message"]).strip() or defaults["message"]
+
+    cfg["drop_channel"] = _as_int(cfg.get("drop_channel"), 0)
+    cfg["sofi_id"] = _as_int(cfg.get("sofi_id"), SOFI_ID)
+
+    channels = []
+    for raw in cfg.get("all_channels") or []:
+        cid = _as_int(raw, 0)
+        if cid and cid not in channels:
+            channels.append(cid)
+    if cfg["drop_channel"]:
+        channels = [cfg["drop_channel"]] + [cid for cid in channels if cid != cfg["drop_channel"]]
+    cfg["all_channels"] = channels
+
+    for key in ("interval_min", "interval_max"):
+        cfg[key] = max(30.0, _as_float(cfg.get(key), defaults[key]))
+    if cfg["interval_min"] > cfg["interval_max"]:
+        cfg["interval_min"], cfg["interval_max"] = cfg["interval_max"], cfg["interval_min"]
+
+    for key in ("cooldown_extra_min", "cooldown_extra_max"):
+        cfg[key] = max(0.0, _as_float(cfg.get(key), defaults[key]))
+    if cfg["cooldown_extra_min"] > cfg["cooldown_extra_max"]:
+        cfg["cooldown_extra_min"], cfg["cooldown_extra_max"] = (
+            cfg["cooldown_extra_max"],
+            cfg["cooldown_extra_min"],
+        )
+
+    for key in ("pause_duration_min", "pause_duration_max"):
+        cfg[key] = max(60.0, _as_float(cfg.get(key), defaults[key]))
+    if cfg["pause_duration_min"] > cfg["pause_duration_max"]:
+        cfg["pause_duration_min"], cfg["pause_duration_max"] = (
+            cfg["pause_duration_max"],
+            cfg["pause_duration_min"],
+        )
+
+    cfg["rarity_norm"] = max(1.0, _as_float(cfg.get("rarity_norm"), defaults["rarity_norm"]))
+    cfg["hearts_norm"] = max(1.0, _as_float(cfg.get("hearts_norm"), defaults["hearts_norm"]))
+    cfg["score_rarity_weight"] = max(0.0, _as_float(cfg.get("score_rarity_weight"), defaults["score_rarity_weight"]))
+    cfg["score_hearts_weight"] = max(0.0, _as_float(cfg.get("score_hearts_weight"), defaults["score_hearts_weight"]))
+    cfg["wishlist_override_threshold"] = max(
+        1.0,
+        _as_float(cfg.get("wishlist_override_threshold"), defaults["wishlist_override_threshold"]),
+    )
+
+    for key in ("wishlist", "wishlist_series"):
+        cfg[key] = [str(item).strip() for item in (cfg.get(key) or []) if str(item).strip()]
+
+    cfg["night_pause_enabled"] = _as_bool(cfg.get("night_pause_enabled", True), True)
+    return cfg
 
 
 # =============================================
@@ -129,6 +232,13 @@ def extract_full_text(message):
     return "\n".join(p for p in parts if p)
 
 
+def iter_component_children(components):
+    """Yield every child component, no matter how many action rows Discord uses."""
+    for row in components or []:
+        for child in getattr(row, "children", []) or []:
+            yield child
+
+
 # Patterns multilingues pour SOFI (FR + EN)
 _DROP_TRIGGER_RE = re.compile(
     r'drop\s+des\s+cartes|dropping\s+cards?|drops?\s+cards?',
@@ -141,11 +251,16 @@ _COOLDOWN_RE = re.compile(
 
 
 def score_card(card, cfg):
-    rarity_score = max(0.0, 1.0 - card["rarity"] / cfg["rarity_norm"])
-    hearts_score = min(1.0, card["hearts"] / cfg["hearts_norm"])
+    rarity_norm = max(1.0, _as_float(cfg.get("rarity_norm"), default_config()["rarity_norm"]))
+    hearts_norm = max(1.0, _as_float(cfg.get("hearts_norm"), default_config()["hearts_norm"]))
+    rarity_weight = max(0.0, _as_float(cfg.get("score_rarity_weight"), 0.30))
+    hearts_weight = max(0.0, _as_float(cfg.get("score_hearts_weight"), 0.70))
+
+    rarity_score = max(0.0, 1.0 - _as_float(card.get("rarity"), 0) / rarity_norm)
+    hearts_score = min(1.0, max(0.0, _as_float(card.get("hearts"), 0) / hearts_norm))
     return round(
-        cfg["score_rarity_weight"] * rarity_score
-        + cfg["score_hearts_weight"] * hearts_score,
+        rarity_weight * rarity_score
+        + hearts_weight * hearts_score,
         3,
     )
 
@@ -160,17 +275,17 @@ def choose_card(cards, cfg, log):
     wishlist_label = ""
 
     for card, score in scored:
-        for wish in cfg["wishlist"]:
+        for wish in cfg.get("wishlist", []):
             if wish.lower() in card["name"].lower():
-                if wishlist_card is None:
+                if wishlist_card is None or score > wishlist_score:
                     wishlist_card, wishlist_score = card, score
                     wishlist_label = "🌟 Wishlist perso"
 
     if wishlist_card is None:
         for card, score in scored:
-            for series in cfg["wishlist_series"]:
+            for series in cfg.get("wishlist_series", []):
                 if series.lower() in card["series"].lower():
-                    if wishlist_card is None:
+                    if wishlist_card is None or score > wishlist_score:
                         wishlist_card, wishlist_score = card, score
                         wishlist_label = "📺 Wishlist série"
 
@@ -211,7 +326,7 @@ class SelfBot:
     STATUS_ERROR = "error"
 
     def __init__(self, config: dict):
-        self.config = config
+        self.config = sanitize_config(config)
         self.log_queue: queue.Queue = queue.Queue()
         self.status = self.STATUS_STOPPED
         self.status_callback = None  # appelé avec le nouveau statut
@@ -250,10 +365,10 @@ class SelfBot:
         self._thread.start()
         return True
 
-    def stop(self):
+    def stop(self, timeout=5):
         if self.status == self.STATUS_STOPPED:
             return
-        if not self._loop or not self._client:
+        if not self._loop or not self._client or self._loop.is_closed():
             self._set_status(self.STATUS_STOPPED)
             return
 
@@ -267,9 +382,16 @@ class SelfBot:
                 pass
 
         try:
-            asyncio.run_coroutine_threadsafe(_close(), self._loop)
+            future = asyncio.run_coroutine_threadsafe(_close(), self._loop)
+            try:
+                future.result(timeout=timeout)
+            except FutureTimeoutError:
+                self.log("warn", "Arrêt Discord trop long — fermeture en arrière-plan")
         except Exception as e:
             self.log("error", f"Erreur arrêt: {e}")
+        finally:
+            if self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
+                self._thread.join(timeout=timeout)
 
     # ---------- internes ----------
 
@@ -283,6 +405,7 @@ class SelfBot:
 
     def _run(self):
         try:
+            sanitize_config(self.config)
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
             self._client = discord.Client()
@@ -461,13 +584,13 @@ class SelfBot:
             if not target_message.components:
                 continue
 
-            all_buttons = target_message.components[0].children
+            all_buttons = list(iter_component_children(target_message.components))
             heart_buttons = [
                 b for b in all_buttons
                 if hasattr(b, "label") and parse_button_hearts(b.label) is not None
             ]
 
-            if heart_buttons and not heart_buttons[0].disabled:
+            if heart_buttons and all(not getattr(b, "disabled", False) for b in heart_buttons):
                 self.log("success", "Boutons actifs")
                 break
         else:
@@ -479,13 +602,21 @@ class SelfBot:
                 card["hearts"] = parse_button_hearts(heart_buttons[i].label)
 
         button_index = choose_card(cards, cfg, self.log)
+        if button_index >= len(heart_buttons):
+            self.log("error", f"Bouton {button_index+1} introuvable ({len(heart_buttons)} bouton(s) détecté(s))")
+            return
+
+        button = heart_buttons[button_index]
+        if getattr(button, "disabled", False):
+            self.log("error", f"Bouton {button_index+1} encore désactivé")
+            return
 
         delay = random.uniform(0, 5.5)
         self.log("info", f"⏳ Attente aléatoire : {delay:.2f}s")
         await asyncio.sleep(delay)
 
         try:
-            await heart_buttons[button_index].click()
-            self.log("success", f"💖 Cliqué bouton {button_index+1} ({heart_buttons[button_index].label}❤️)")
+            await button.click()
+            self.log("success", f"💖 Cliqué bouton {button_index+1} ({button.label}❤️)")
         except Exception as e:
             self.log("error", f"Erreur clic : {e}")

@@ -43,7 +43,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Il n'y a pas (encore) de suite de tests. Teste tes changements manuellement :
+Lance d'abord les tests core légers :
+
+```bash
+python -m unittest
+```
+
+Puis teste manuellement les changements UI :
 
 - Démarrer le GUI, ajouter un bot, sauvegarder, redémarrer — config persiste.
 - Basculer dark/light, personnaliser une couleur, redémarrer — settings
