@@ -31,7 +31,14 @@ sys.path.insert(0, str(_HERE))
 from bot_core import SelfBot, default_config, sanitize_config  # noqa: E402
 
 
-CONFIG_PATH = _HERE / "bots.json"
+# When frozen by PyInstaller, mutable state lives next to the exe, not
+# inside the temporary _MEIPASS extraction dir.
+if getattr(sys, "frozen", False):
+    USER_DIR = Path(sys.executable).resolve().parent
+else:
+    USER_DIR = _HERE
+
+CONFIG_PATH = USER_DIR / "bots.json"
 
 
 # =============================================

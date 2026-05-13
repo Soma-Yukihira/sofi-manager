@@ -5,6 +5,7 @@ Thèmes : preset dark (black & gold), preset light (white & gold), couleurs pers
 """
 
 import json
+import sys
 import uuid
 import tkinter as tk
 from tkinter import messagebox, colorchooser
@@ -13,6 +14,32 @@ from pathlib import Path
 import customtkinter as ctk
 
 from bot_core import SelfBot, default_config, sanitize_config
+
+
+# =============================================
+# PyInstaller-safe paths
+# =============================================
+#
+# Two distinct roots:
+#   - BUNDLE_DIR : read-only resources (assets/). Inside the PyInstaller
+#     bundle when frozen (sys._MEIPASS), otherwise next to the source.
+#   - USER_DIR   : mutable state (bots.json, settings.json). Always next
+#     to the exe / source so the user can edit/back up these files.
+
+def _bundle_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parent
+
+
+def _user_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+BUNDLE_DIR = _bundle_dir()
+USER_DIR   = _user_dir()
 
 
 # =============================================
@@ -93,8 +120,8 @@ LEVEL_KEYS = {
 }
 
 
-CONFIG_PATH   = Path(__file__).parent / "bots.json"
-SETTINGS_PATH = Path(__file__).parent / "settings.json"
+CONFIG_PATH   = USER_DIR / "bots.json"
+SETTINGS_PATH = USER_DIR / "settings.json"
 
 
 def write_json_atomic(path: Path, data: dict):
@@ -261,7 +288,7 @@ class SelfbotManagerApp(ctk.CTk):
         self.minsize(1100, 720)
 
         # Icône fenêtre + taskbar (Windows : grouping basé sur app id)
-        icon_path = Path(__file__).parent / "assets" / "app.ico"
+        icon_path = BUNDLE_DIR / "assets" / "app.ico"
         if icon_path.exists():
             try:
                 self.iconbitmap(default=str(icon_path))
