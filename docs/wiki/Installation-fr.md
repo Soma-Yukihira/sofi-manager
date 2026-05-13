@@ -70,8 +70,8 @@ La fenêtre s'ouvre. Le premier run ne crée aucun fichier — `bots.json` et
 Pour lancer l'app comme n'importe quelle autre appli Windows — pas de
 terminal, juste une icône dans la taskbar — génère un raccourci une fois :
 
-```powershell
-.\tools\create-shortcut.ps1
+```bash
+python tools/create_shortcut.py
 ```
 
 Ça crée `Selfbot Manager.lnk` à la racine du projet avec l'icône ⚜ dorée,
@@ -84,6 +84,18 @@ Ensuite :
 
 Le raccourci est régénéré par le script à partir de ton chemin venv local,
 donc il est gitignoré — relance le script si tu déplaces le projet.
+
+### Alternative · .exe autonome
+
+Si tu préfères éviter l'install Python et te contenter d'une appli
+double-cliquable, compile un exécutable Windows :
+
+```bash
+python tools/build.py
+```
+
+Voir [Compilation](Building-fr) pour la structure, les options et le
+dépannage.
 
 ## Récupérer un token
 

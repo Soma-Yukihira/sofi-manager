@@ -8,11 +8,11 @@ n'est jamais touchée** par une mise à jour.
 
 ## TL;DR
 
-```powershell
-.\tools\update.ps1
+```bash
+python tools/update.py
 ```
 
-C'est tout. Le script fait ce qu'il faut.
+C'est tout — même commande sur Windows, macOS et Linux.
 
 ## Ce qu'il fait vraiment
 
@@ -61,24 +61,23 @@ OK  Up to date
 Tu as téléchargé un ZIP au lieu de cloner. Le script ne peut pas
 `git pull` depuis un dossier non-git. Fix :
 
-```powershell
+```bash
 git clone https://github.com/Soma-Yukihira/sofi-manager.git sofi-manager-new
 # copie ta config dans le nouveau dossier
-copy sofi-manager\bots.json     sofi-manager-new\
-copy sofi-manager\settings.json sofi-manager-new\
+# (Windows : `copy` ; macOS/Linux : `cp`)
 ```
 
 Puis supprime l'ancien dossier. Les prochaines updates marcheront avec
-`update.ps1`.
+`python tools/update.py`.
 
 ### « git pull failed »
 
 Presque toujours parce que tu as édité un fichier tracké (ex: bidouille
 locale dans `gui.py`). Le script te dit de stasher :
 
-```powershell
+```bash
 git stash
-.\tools\update.ps1
+python tools/update.py
 git stash pop
 ```
 

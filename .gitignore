@@ -27,6 +27,12 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+# PyInstaller build artifacts (selfbot-manager.spec itself IS tracked)
+*.manifest
+*.toc
+*.pkg
+__pycache__/
+
 # Virtual environments
 env/
 venv/

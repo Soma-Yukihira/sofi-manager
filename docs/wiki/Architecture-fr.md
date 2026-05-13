@@ -99,3 +99,22 @@ EN (`dropping cards`) — étends-le si SOFI ajoute d'autres langues.
 | `settings.json` | `gui.py` | Prefs UI (mode thème + overrides couleurs).    |
 
 Les deux sont gitignorés.
+
+## Packaging
+
+L'arborescence source tourne telle quelle avec `python main.py`. Pour
+les utilisateurs finaux, un spec PyInstaller versionné
+(`selfbot-manager.spec`) bundle le GUI en exécutable Windows autonome
+via `python tools/build.py`.
+
+Deux helpers de chemins runtime dans `gui.py` synchronisent les builds
+source et gelés :
+
+- `BUNDLE_DIR` — assets read-only. Vaut `sys._MEIPASS` une fois gelé,
+  sinon la racine du repo.
+- `USER_DIR` — état mutable (`bots.json`, `settings.json`). Résout
+  toujours vers le dossier contenant le .exe (ou l'arbre source), donc
+  l'utilisateur peut éditer/sauvegarder ces fichiers à côté du binaire.
+
+Voir la page wiki [Compilation](Building-fr) pour la structure
+complète et les gotchas PyInstaller.

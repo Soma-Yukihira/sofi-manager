@@ -63,29 +63,42 @@ python main.py
 
 L'interface s'ouvre. Clique **+ AJOUTER UN BOT**, remplis ton token + drop channel, **Sauvegarder**, puis **▶ Démarrer**.
 
-### Optionnel · Épingler à la barre des tâches (Windows)
+### Optionnel · .exe Windows autonome
 
-```powershell
-.\tools\create-shortcut.ps1
+Évite l'install Python avec un build en une commande :
+
+```bash
+python tools/build.py
 ```
 
-Ça génère `Selfbot Manager.lnk` avec l'icône ⚜ dorée. Glisse-le sur la
-barre des tâches (ou clic droit → *Épingler à la barre des tâches*) — l'app
-se lance sans fenêtre de console.
+Produit `dist/SelfbotManager/SelfbotManager.exe` — double-clic pour
+lancer. Voir la page wiki [Compilation](../../wiki/Building-fr) pour les
+options (`--onefile`, `--clean`) et la stratégie de chemins runtime.
+
+### Optionnel · Épingler à la barre des tâches (Windows)
+
+```bash
+python tools/create_shortcut.py
+```
+
+Génère `Selfbot Manager.lnk` avec l'icône ⚜ dorée — pointe automatique
+sur le `.exe` si tu en as compilé un, sinon sur le `pythonw.exe` du
+venv. Glisse-le sur la barre des tâches (ou clic droit → *Épingler à la
+barre des tâches*) — l'app se lance sans fenêtre de console.
 
 ### Mettre à jour
 
 Pour récupérer la dernière version sans perdre ta config locale (tokens,
 thème, bots) :
 
-```powershell
-.\tools\update.ps1                    # Windows
-./tools/update.sh                     # Linux / macOS
+```bash
+python tools/update.py
 ```
 
-Le script fait un `git pull`, rafraîchit les dépendances Python si
-`requirements.txt` a changé et imprime un résumé. `bots.json` et
-`settings.json` sont gitignorés donc rien de local n'est touché.
+Même commande sur Windows, macOS et Linux. Le script fait un `git
+pull`, rafraîchit les dépendances Python si `requirements.txt` a
+changé et imprime un résumé. `bots.json` et `settings.json` sont
+gitignorés donc rien de local n'est touché.
 
 ### Headless / VPS
 
@@ -136,6 +149,7 @@ Le [Wiki](../../wiki) couvre chaque sujet en détail :
 | Page | Contenu |
 | ---- | ------- |
 | [Installation](../../wiki/Installation-fr) | Setup Python, venv, dépendances |
+| [Compilation](../../wiki/Building-fr) | .exe Windows autonome en une commande |
 | [Configuration](../../wiki/Configuration-fr) | Chaque champ du GUI expliqué |
 | [Thèmes](../../wiki/Theming-fr) | Presets et personnalisation 17 couleurs |
 | [Architecture](../../wiki/Architecture-fr) | Comment bots, threads et event loops sont câblés |

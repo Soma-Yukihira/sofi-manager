@@ -3,6 +3,7 @@
 **🇬🇧 English**
 - [Home](Home)
 - [Installation](Installation)
+- [Building](Building)
 - [Configuration](Configuration)
 - [Theming](Theming)
 - [VPS Deployment](VPS-Deployment)
@@ -14,6 +15,7 @@
 **🇫🇷 Français**
 - [Accueil](Home-fr)
 - [Installation](Installation-fr)
+- [Compilation](Building-fr)
 - [Configuration](Configuration-fr)
 - [Thèmes](Theming-fr)
 - [Déploiement VPS](VPS-Deployment-fr)

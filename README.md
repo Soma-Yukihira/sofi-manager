@@ -63,29 +63,42 @@ python main.py
 
 The GUI opens. Click **+ ADD BOT**, fill in your token + drop channel, **Save**, then **▶ Start**.
 
-### Optional · Pin to taskbar (Windows)
+### Optional · Standalone Windows .exe
 
-```powershell
-.\tools\create-shortcut.ps1
+Skip Python entirely with a one-command build:
+
+```bash
+python tools/build.py
 ```
 
-This generates `Selfbot Manager.lnk` with the gold ⚜ icon. Drag it onto your
-taskbar (or right-click → *Pin to taskbar*) — launches the app without a
-console window.
+Produces `dist/SelfbotManager/SelfbotManager.exe` — double-click to run.
+See the [Building](../../wiki/Building) wiki page for options
+(`--onefile`, `--clean`) and runtime path strategy.
+
+### Optional · Pin to taskbar (Windows)
+
+```bash
+python tools/create_shortcut.py
+```
+
+Generates `Selfbot Manager.lnk` with the gold ⚜ icon, auto-pointing at
+the `.exe` if you built one, otherwise at the venv `pythonw.exe`. Drag
+it onto your taskbar (or right-click → *Pin to taskbar*) — launches the
+app without a console window.
 
 ### Updating
 
 To pull the latest version while keeping all your local config (tokens,
 themes, bots) untouched:
 
-```powershell
-.\tools\update.ps1                    # Windows
-./tools/update.sh                     # Linux / macOS
+```bash
+python tools/update.py
 ```
 
-The script `git pull`s, refreshes Python deps if `requirements.txt` changed,
-and prints a summary. Your `bots.json` and `settings.json` are gitignored,
-so nothing local is lost.
+Same command on Windows, macOS, and Linux. The script `git pull`s,
+refreshes Python deps if `requirements.txt` changed, and prints a
+summary. Your `bots.json` and `settings.json` are gitignored, so
+nothing local is lost.
 
 ### Headless / VPS
 
@@ -135,6 +148,7 @@ The [Wiki](../../wiki) covers each topic in depth:
 | Page | What's inside |
 | ---- | ------------- |
 | [Installation](../../wiki/Installation) | Python setup, venv, dependencies |
+| [Building](../../wiki/Building) | One-command standalone Windows .exe |
 | [Configuration](../../wiki/Configuration) | Every field of the GUI explained |
 | [Theming](../../wiki/Theming) | Presets and 17-slot color customization |
 | [Architecture](../../wiki/Architecture) | How bots, threads and event loops are wired |
