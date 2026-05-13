@@ -125,7 +125,8 @@ your AV vendor as a false positive, or build locally from source.
 
 | Symptom                                   | Cause / fix                                                                                |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `ModuleNotFoundError` on first launch     | A new runtime import isn't in the spec. Add it to `hiddenimports` in `selfbot-manager.spec`. |
+| `ModuleNotFoundError` on first launch     | A new runtime import isn't in the spec. Add it to `hiddenimports` in `selfbot-manager.spec`. C-extensions imported by name (e.g. `_cffi_backend`) are already listed there — extend that pattern for new native deps. |
+| `ModuleNotFoundError: _cffi_backend` (or other ABI-tagged pyd missing) | The installed wheel's ABI tag doesn't match your venv's Python. Reinstall the offender: `python -m pip install --force-reinstall --no-cache-dir cffi curl_cffi`, then rebuild. |
 | Icon missing on the window / taskbar      | `assets/app.ico` wasn't bundled. Check `datas` in the spec.                                |
 | `bots.json` not found next to the exe     | Working directory is wrong. Always launch via the .exe (or the shortcut), not the .lnk inside `_internal/`. |
 | Build succeeds but exe exits immediately  | A console-only `print()` crashed without a console. Run the exe from a terminal to see the traceback. |

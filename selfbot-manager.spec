@@ -14,7 +14,11 @@
 # per-user and gitignored.
 
 import os
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_dynamic_libs,
+    collect_submodules,
+)
 
 ONEFILE = os.environ.get("SELFBOT_ONEFILE") == "1"
 
@@ -23,15 +27,30 @@ datas = [
 ]
 # customtkinter ships JSON themes that PyInstaller misses without help.
 datas += collect_data_files("customtkinter")
+# curl_cffi ships a native _wrapper.pyd + data; pull both in.
+datas += collect_data_files("curl_cffi")
+
+# Native binaries for curl_cffi / cffi. collect_dynamic_libs grabs any
+# bundled DLLs (e.g. libcurl variants shipped inside the wheel).
+binaries = []
+binaries += collect_dynamic_libs("curl_cffi")
+binaries += collect_dynamic_libs("cffi")
+
+# Hidden imports: discord.py-self -> curl_cffi -> `import _cffi_backend`
+# is a top-level C-extension that PyInstaller's module-graph walker can
+# miss because nothing imports it by name from Python source we control.
+# Listing it (and curl_cffi submodules) here is the durable fix.
+hiddenimports = ["_cffi_backend"]
+hiddenimports += collect_submodules("curl_cffi")
 
 block_cipher = None
 
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
-    hiddenimports=[],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
