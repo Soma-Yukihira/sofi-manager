@@ -88,8 +88,13 @@ barre des tâches*) — l'app se lance sans fenêtre de console.
 
 ### Mettre à jour
 
-Pour récupérer la dernière version sans perdre ta config locale (tokens,
-thème, bots) :
+Clique sur **`⟳  Mises à jour`** dans la barre du haut pour vérifier la
+dernière GitHub Release — version courante, notes de version et lien
+direct vers la page de téléchargement. Voir
+[Mettre à jour](docs/wiki/Updating-fr.md) pour les détails.
+
+Pour récupérer le dernier code source sans perdre ta config locale
+(tokens, thème, bots) :
 
 ```bash
 python tools/update.py

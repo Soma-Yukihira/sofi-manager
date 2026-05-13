@@ -6,6 +6,25 @@ Le projet bouge — les formats des drops changent, les presets de thème
 évoluent, les dépendances bumpent. La bonne nouvelle : **ta config locale
 n'est jamais touchée** par une mise à jour.
 
+## Vérifier depuis la GUI
+
+Clique sur **`⟳  Mises à jour`** dans la barre du haut. L'app interroge la
+dernière GitHub Release et affiche :
+
+- la version installée (`version.py:__version__`),
+- le dernier tag publié,
+- le titre de la release et un extrait des notes,
+- un bouton **Ouvrir la release** pour télécharger le nouveau build.
+
+Le check tourne dans un thread d'arrière-plan et ne bloque jamais l'UI. Si
+aucune release n'a encore été publiée, le message *"Aucune release publiée
+pour le moment."* s'affiche — il faut publier une release sur GitHub pour
+que la fonctionnalité remonte quelque chose.
+
+Le bouton **vérifie seulement** ; il ne télécharge rien et ne remplace
+aucun fichier. Utilise `python tools/update.py` (install source) ou
+télécharge le `.exe` depuis la page de release (build figé).
+
 ## TL;DR
 
 ```bash

@@ -88,7 +88,11 @@ app without a console window.
 
 ### Updating
 
-To pull the latest version while keeping all your local config (tokens,
+Click **`⟳  Mises à jour`** in the top bar to check the latest GitHub
+Release — current version, release notes, and a direct link to the
+download page. See [Updating](docs/wiki/Updating.md) for details.
+
+To pull the latest source while keeping all your local config (tokens,
 themes, bots) untouched:
 
 ```bash

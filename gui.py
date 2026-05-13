@@ -6,7 +6,9 @@ Thèmes : preset dark (black & gold), preset light (white & gold), couleurs pers
 
 import json
 import sys
+import threading
 import uuid
+import webbrowser
 import tkinter as tk
 from tkinter import messagebox, colorchooser
 from pathlib import Path
@@ -14,6 +16,8 @@ from pathlib import Path
 import customtkinter as ctk
 
 from bot_core import SelfBot, default_config, sanitize_config
+from updater import UpdateResult, check_for_update
+from version import __version__
 
 
 # =============================================
@@ -474,7 +478,7 @@ class SelfbotManagerApp(ctk.CTk):
         )
         self.status_label.pack(side="left")
 
-        # Theme controls (centre-droit)
+        # Theme controls + update check (centre-droit)
         theme_box = ctk.CTkFrame(top, fg_color="transparent")
         theme_box.grid(row=0, column=1, padx=10, pady=18, sticky="e")
         toggle_text = "☀  Clair" if self.theme.mode == "dark" else "🌙  Sombre"
@@ -482,6 +486,11 @@ class SelfbotManagerApp(ctk.CTk):
                           variant="default", width=100).pack(side="right", padx=4)
         self._mk_button(theme_box, "🎨  Couleurs", command=self._open_theme_customizer,
                           variant="ghost", width=110).pack(side="right", padx=4)
+        self.update_btn = self._mk_button(
+            theme_box, "⟳  Mises à jour",
+            command=self._check_for_updates, variant="ghost", width=140,
+        )
+        self.update_btn.pack(side="right", padx=4)
 
         # Action buttons
         actions = ctk.CTkFrame(top, fg_color="transparent")
@@ -1024,6 +1033,98 @@ class SelfbotManagerApp(ctk.CTk):
         bot["entry"].set_status(status)
         if bot_id == self.selected_id:
             self._refresh_action_buttons()
+
+    # ---------- Update check ----------
+
+    def _check_for_updates(self):
+        btn = getattr(self, "update_btn", None)
+        if btn is not None:
+            btn.configure(state="disabled", text="⟳  Vérification…")
+
+        def worker():
+            result = check_for_update()
+            self.after(0, lambda: self._on_update_result(result))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_result(self, result: UpdateResult):
+        btn = getattr(self, "update_btn", None)
+        if btn is not None:
+            btn.configure(state="normal", text="⟳  Mises à jour")
+        self._show_update_dialog(result)
+
+    def _show_update_dialog(self, result: UpdateResult):
+        T = self.theme
+        win = ctk.CTkToplevel(self)
+        win.title("Mises à jour")
+        win.geometry("520x420")
+        win.configure(fg_color=T["bg"])
+        win.transient(self)
+        try:
+            win.grab_set()
+        except Exception:
+            pass
+
+        if result.error and not result.update_available:
+            title = "Vérification impossible"
+            title_color = T["error"]
+            subtitle = result.error
+        elif result.update_available:
+            title = "Nouvelle version disponible"
+            title_color = T["accent"]
+            subtitle = (
+                f"Installée : {result.current_version}    →    "
+                f"Disponible : {result.latest_version}"
+            )
+        else:
+            title = "Application à jour"
+            title_color = T["success"]
+            subtitle = f"Version installée : {result.current_version}"
+
+        ctk.CTkLabel(
+            win, text=title.upper(), text_color=title_color,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(anchor="w", padx=24, pady=(22, 4))
+        ctk.CTkLabel(
+            win, text=subtitle, text_color=T["text"],
+            font=ctk.CTkFont(size=12), justify="left", anchor="w", wraplength=460,
+        ).pack(anchor="w", padx=24, pady=(0, 14))
+
+        if result.release_name:
+            ctk.CTkLabel(
+                win, text=result.release_name, text_color=T["text_dim"],
+                font=ctk.CTkFont(size=11, weight="bold"),
+                justify="left", anchor="w", wraplength=460,
+            ).pack(anchor="w", padx=24, pady=(0, 4))
+
+        if result.release_notes:
+            notes = ctk.CTkTextbox(
+                win, fg_color=T["input_bg"], border_color=T["border"],
+                border_width=1, text_color=T["text"],
+                font=ctk.CTkFont(family="Consolas", size=11),
+            )
+            notes.pack(fill="both", expand=True, padx=24, pady=(4, 14))
+            notes.insert("1.0", result.release_notes)
+            notes.configure(state="disabled")
+        else:
+            ctk.CTkFrame(win, fg_color="transparent").pack(fill="both", expand=True)
+
+        bar = ctk.CTkFrame(win, fg_color="transparent")
+        bar.pack(fill="x", padx=24, pady=(0, 20))
+
+        self._mk_button(
+            bar, "Fermer", command=win.destroy,
+            variant="ghost", width=110,
+        ).pack(side="right")
+
+        if result.release_url:
+            label = "Ouvrir la release" if result.update_available else "Voir sur GitHub"
+            self._mk_button(
+                bar, label,
+                command=lambda url=result.release_url: webbrowser.open(url),
+                variant="primary" if result.update_available else "default",
+                width=170,
+            ).pack(side="right", padx=(8, 8))
 
     # ---------- Theme actions ----------
 

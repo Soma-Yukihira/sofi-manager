@@ -6,6 +6,25 @@ The project is a moving target — drops formats change, theme presets get
 tweaked, dependencies bump. The good news: **your local config is never
 touched** by an update.
 
+## Check from the GUI
+
+Click **`⟳  Mises à jour`** in the top bar. The app queries the latest
+GitHub Release and shows:
+
+- the installed version (`version.py:__version__`),
+- the latest published tag,
+- the release title and short notes,
+- an **Open the release** button to download the new build.
+
+The check runs in a background thread and never freezes the UI. If no
+release has been published yet, you'll see *"Aucune release publiée pour le
+moment."* — publish a release on GitHub for this feature to surface
+something.
+
+The button only **checks**; it does not download or replace files. Use
+`python tools/update.py` (source install) or download the new `.exe` from
+the release page (frozen build).
+
 ## TL;DR
 
 ```bash
