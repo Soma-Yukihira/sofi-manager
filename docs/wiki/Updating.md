@@ -116,3 +116,97 @@ If a new dependency is added (rare), the script auto-runs
 Today, `bots.json` and `settings.json` schemas are stable. If a future
 release changes them in a breaking way, the changelog will mention it and
 the GUI will print a clear migration message. No silent corruption.
+
+---
+
+# Publishing a release (maintainers only)
+
+This section is for the project maintainer. End users do not need it.
+
+## Prerequisites
+
+- **Python 3.10+** with `pytest` and `pyinstaller` available (PyInstaller
+  is auto-installed by `tools/build.py` if missing)
+- **Git** with push rights on `origin`
+- **GitHub CLI** (`gh`) — install from <https://cli.github.com/> and run
+  `gh auth login` once
+
+## Single source of truth
+
+`version.py:__version__` is the **only** place to bump the version. The
+GUI reads it for the "current version" line, the in-app update checker
+compares it against GitHub's latest release tag, and `tools/release.py`
+derives the tag from it.
+
+Format is strict SemVer `MAJOR.MINOR.PATCH` (no pre-release suffixes).
+The GitHub tag is always `v{__version__}` — e.g. `__version__ = "0.2.0"`
+→ tag `v0.2.0`.
+
+## Workflow
+
+1. **Bump** `version.py:__version__` on a branch.
+2. **Rehearse** the release without touching git or GitHub:
+   ```bash
+   python tools/release.py --dry-run
+   ```
+   Allowed from any branch — useful before merging the bump PR. Prints a
+   warning if you're not on `main`, runs tests + build + archive, then
+   stops.
+3. **Merge** the bump PR into `main`.
+4. **Switch** to `main` with a clean working tree:
+   ```bash
+   git checkout main
+   git pull --ff-only
+   ```
+5. **Publish**:
+   ```bash
+   python tools/release.py
+   ```
+
+## What the live script does
+
+1. Reads `__version__` / `__repo__` from `version.py` and validates strict
+   SemVer.
+2. Hard-fails if the branch is not `main`.
+3. Hard-fails if the working tree is dirty (staged, unstaged, or
+   untracked).
+4. Hard-fails if tag `v{version}` already exists locally or on origin.
+5. Verifies `gh` is installed and authenticated.
+6. Runs `python -m pytest -q tests` (skip with `--skip-tests`).
+7. Runs `python tools/build.py --clean` and verifies
+   `dist/SelfbotManager/SelfbotManager.exe` exists.
+8. Packs `dist/SelfbotManager/` into a deterministic zip:
+   `dist/releases/SelfbotManager-v{version}-windows.zip`
+   (sorted entries + fixed mtime → byte-stable across machines).
+9. Creates annotated tag `v{version}` and pushes it to origin (rolls the
+   local tag back if push fails).
+10. `gh release create v{version} <archive> --repo {__repo__}` — creates
+    the GitHub Release and uploads the zip as an asset.
+
+## How the in-app update check sees it
+
+`updater.py` queries
+`GET https://api.github.com/repos/{__repo__}/releases/latest` and reads
+`tag_name`. The GUI strips a leading `v` and compares against
+`version.py:__version__`. The release tag **must** be `v{__version__}`
+exactly, or the comparison will mismatch and users will see a wrong
+"update available" / "up to date" state.
+
+If you publish a release manually (without `tools/release.py`), make sure
+the tag matches and that the Windows zip asset is attached to the
+release — the download button in the GUI links to the release page, not
+the zip directly.
+
+## Flags
+
+| Flag           | Effect                                                            |
+| -------------- | ----------------------------------------------------------------- |
+| `--dry-run`    | Plan + checks + tests + build + archive. No tag / push / publish. |
+| `--skip-tests` | Skip pytest. Use only after running tests separately in CI.       |
+
+## Build outputs and git hygiene
+
+`dist/`, `build/`, `dist/releases/`, `*.exe`, `*.zip`, `__pycache__/`,
+and `.claude/worktrees/` are all gitignored. Never commit any of them —
+the release script writes everything to `dist/` on purpose so a clean
+checkout stays clean.

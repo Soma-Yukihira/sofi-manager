@@ -93,6 +93,26 @@ dernière GitHub Release — version courante, notes de version et lien
 direct vers la page de téléchargement. Voir
 [Mettre à jour](docs/wiki/Updating-fr.md) pour les détails.
 
+### Publier une release (mainteneurs)
+
+```bash
+python tools/release.py --dry-run   # répétition end-to-end
+python tools/release.py             # tag + push + publication sur main
+```
+
+Nécessite Python 3.10+, Git et le [GitHub CLI](https://cli.github.com/)
+(`gh auth login`). Le script lit `__version__` dans
+[`version.py`](version.py) — bump ce fichier unique avant de lancer. Le
+format du tag est `vMAJEUR.MINEUR.PATCH`. Le script build via
+`tools/build.py`, empaquette `dist/SelfbotManager/` dans
+`dist/releases/SelfbotManager-v{version}-windows.zip`, crée le tag, le
+push, et publie une GitHub Release avec l'archive en pièce jointe.
+
+Le bouton **`⟳ Mises à jour`** dans l'app interroge l'API GitHub Releases
+et compare le dernier tag à `version.py:__version__` — donc le tag de la
+release **doit correspondre** exactement à `__version__` pour que les
+utilisateurs voient la mise à jour.
+
 Pour récupérer le dernier code source sans perdre ta config locale
 (tokens, thème, bots) :
 
