@@ -30,7 +30,6 @@ sys.path.insert(0, str(_HERE))
 
 from bot_core import SelfBot, default_config, sanitize_config  # noqa: E402
 
-
 # When frozen by PyInstaller, mutable state lives next to the exe, not
 # inside the temporary _MEIPASS extraction dir.
 if getattr(sys, "frozen", False):
@@ -196,7 +195,7 @@ def _ask_int(prompt: str, default: int | None = None) -> int:
 
 def _ask_list(prompt: str) -> list[int]:
     cprint(f"{Color.GOLD}? {Color.RESET}{prompt}  {Color.DIMGRAY}(one ID per line, blank to finish){Color.RESET}")
-    out = []
+    out: list[int] = []
     while True:
         raw = input(f"  {Color.DIMGRAY}>{Color.RESET} ").strip()
         if not raw:

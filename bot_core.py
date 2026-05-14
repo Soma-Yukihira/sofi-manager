@@ -6,15 +6,14 @@ et expose ses logs via une queue thread-safe.
 """
 
 import asyncio
-import re
-import random
-import threading
 import queue
+import random
+import re
+import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
 
 import discord
-
 
 SOFI_ID = 853629533855809596
 
@@ -235,8 +234,7 @@ def extract_full_text(message):
 def iter_component_children(components):
     """Yield every child component, no matter how many action rows Discord uses."""
     for row in components or []:
-        for child in getattr(row, "children", []) or []:
-            yield child
+        yield from getattr(row, "children", []) or []
 
 
 def _format_drop_recipients(message, exclude_id):
@@ -348,7 +346,7 @@ class SelfBot:
 
         self._client = None
         self._loop = None
-        self._thread = None
+        self._thread: threading.Thread | None = None
         self._drop_task = None
         self._cooldown_task = None
         self._night_task = None
@@ -630,7 +628,7 @@ class SelfBot:
         choose_card(cards, cfg, self.log)  # 1ère sélection
 
         heart_buttons = []
-        for attempt in range(10):
+        for _attempt in range(10):
             await asyncio.sleep(0.5)
             try:
                 target_message = await message.channel.fetch_message(message.id)

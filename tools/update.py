@@ -19,7 +19,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 IS_TTY = sys.stdout.isatty()
 
@@ -105,7 +104,7 @@ def main() -> int:
     new_hash = _git("rev-parse", "--short", "HEAD").stdout.strip()
 
     diff_out = _git("diff", "--name-only", f"{old_hash}..{new_hash}").stdout
-    changed_files = [l for l in diff_out.splitlines() if l]
+    changed_files = [line for line in diff_out.splitlines() if line]
     req_changed = "requirements.txt" in changed_files
 
     pip = _find_pip()
