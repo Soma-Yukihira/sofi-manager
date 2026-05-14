@@ -2,6 +2,7 @@ import asyncio
 import threading
 import time
 import unittest
+import unittest.mock
 from unittest.mock import MagicMock
 
 from bot_core import (
@@ -264,6 +265,69 @@ class SdWatchdogTests(unittest.TestCase):
             bot._cancel_sd_watchdog(333)
 
         self._run_on_loop(scenario())
+
+
+class RecordGrabSafeTests(unittest.TestCase):
+    """The bot persists every click attempt into storage, but a DB error
+    must never cascade into the grab flow."""
+
+    def _bot(self, name="bot[1]"):
+        cfg = default_config()
+        cfg["name"] = name
+        return SelfBot(cfg)
+
+    def test_calls_storage_with_card_fields(self):
+        bot = self._bot("bot[1]")
+        card = {"index": 0, "name": "Miku", "series": "Vocaloid", "rarity": 42, "hearts": 256}
+        with unittest.mock.patch("bot_core.storage.record_grab") as rec:
+            bot._record_grab_safe(card, channel_id=98765, success=True, error_code=None)
+        rec.assert_called_once()
+        sent = rec.call_args.args[0]
+        self.assertEqual(sent.bot_label, "bot[1]")
+        self.assertEqual(sent.channel_id, 98765)
+        self.assertEqual(sent.card_name, "Miku")
+        self.assertEqual(sent.series, "Vocaloid")
+        self.assertEqual(sent.rarity, "42")
+        self.assertEqual(sent.hearts, 256)
+        self.assertTrue(sent.success)
+        self.assertIsNone(sent.error_code)
+        self.assertIsInstance(sent.score, float)
+
+    def test_persists_failure_with_error_code(self):
+        bot = self._bot()
+        card = {"index": 1, "name": "X", "series": "Y", "rarity": 100, "hearts": 50}
+        with unittest.mock.patch("bot_core.storage.record_grab") as rec:
+            bot._record_grab_safe(card, channel_id=1, success=False, error_code="40060")
+        sent = rec.call_args.args[0]
+        self.assertFalse(sent.success)
+        self.assertEqual(sent.error_code, "40060")
+
+    def test_swallows_storage_error_and_logs_warning(self):
+        bot = self._bot()
+        card = {"index": 0, "name": "X", "series": "Y", "rarity": 100, "hearts": 0}
+        with unittest.mock.patch(
+            "bot_core.storage.record_grab",
+            side_effect=RuntimeError("disk full"),
+        ):
+            # Must not raise.
+            bot._record_grab_safe(card, channel_id=1, success=True, error_code=None)
+        levels = [lvl for lvl, _ in list(bot.log_queue.queue)]
+        self.assertIn("warn", levels)
+        warn_msg = next(text for lvl, text in list(bot.log_queue.queue) if lvl == "warn")
+        self.assertIn("DB grabs", warn_msg)
+        self.assertIn("RuntimeError", warn_msg)
+
+    def test_handles_card_with_missing_rarity(self):
+        # Defensive: a malformed card dict shouldn't crash the hook.
+        bot = self._bot()
+        with unittest.mock.patch("bot_core.storage.record_grab") as rec:
+            bot._record_grab_safe(
+                {"name": "X", "series": "Y", "rarity": None, "hearts": None},
+                channel_id=1, success=False, error_code="EmptyDrop",
+            )
+        sent = rec.call_args.args[0]
+        self.assertIsNone(sent.rarity)
+        self.assertIsNone(sent.hearts)
 
 
 if __name__ == "__main__":

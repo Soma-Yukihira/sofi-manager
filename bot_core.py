@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 
 import discord
 
+import storage
+
 SOFI_ID = 853629533855809596
 
 
@@ -565,6 +567,23 @@ class SelfBot:
             except asyncio.CancelledError:
                 raise
 
+    def _record_grab_safe(self, card, channel_id, success, error_code):
+        """Persist a grab attempt — never let DB errors propagate into the bot."""
+        try:
+            storage.record_grab(storage.GrabRecord(
+                bot_label=self.config.get("name", ""),
+                channel_id=channel_id,
+                card_name=card.get("name"),
+                series=card.get("series"),
+                rarity=str(card.get("rarity")) if card.get("rarity") is not None else None,
+                hearts=card.get("hearts"),
+                score=score_card(card, self.config),
+                success=success,
+                error_code=error_code,
+            ))
+        except Exception as e:
+            self.log("warn", f"⚠️ DB grabs indisponible ({type(e).__name__}: {e})")
+
     async def _on_message(self, message):
         cfg = self.config
         client = self._client
@@ -670,8 +689,12 @@ class SelfBot:
         self.log("info", f"⏳ Attente aléatoire : {delay:.2f}s")
         await asyncio.sleep(delay)
 
+        chosen = cards[button_index]
+        success = False
+        error_code: str | None = None
         try:
             await button.click()
+            success = True
             self.log("success", f"💖 Cliqué bouton {button_index+1} ({button.label}❤️)")
         except discord.HTTPException as e:
             # Codes courants : 10008 message gone, 40060 interaction already acked,
@@ -679,6 +702,10 @@ class SelfBot:
             code = getattr(e, "code", "?")
             status = getattr(e, "status", "?")
             text = getattr(e, "text", "") or str(e)
+            error_code = str(code)
             self.log("error", f"Erreur clic HTTP {status} (code {code}) : {text}")
         except Exception as e:
+            error_code = type(e).__name__
             self.log("error", f"Erreur clic ({type(e).__name__}) : {e}")
+
+        self._record_grab_safe(chosen, message.channel.id, success, error_code)
