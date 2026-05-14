@@ -6,6 +6,7 @@ Thèmes : preset dark (black & gold), preset light (white & gold), couleurs pers
 
 import json
 import sys
+import threading
 import uuid
 import tkinter as tk
 from tkinter import messagebox, colorchooser
@@ -514,6 +515,56 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
+    def _check_updates_now(self):
+        """Manual update check - same fetch as the background poller, but
+        always gives feedback (banner if behind, messagebox otherwise)."""
+        btn = getattr(self, "check_updates_btn", None)
+        if btn is not None:
+            try:
+                btn.configure(state="disabled", text="...")
+            except Exception:
+                pass
+
+        def _worker():
+            try:
+                result = updater.fetch_and_status()
+            except Exception as e:
+                result = {"state": "error", "behind": 0, "err": str(e)}
+            self.after(0, self._on_check_updates_result, result)
+
+        threading.Thread(target=_worker, name="updater-manual", daemon=True).start()
+
+    def _on_check_updates_result(self, result: dict):
+        btn = getattr(self, "check_updates_btn", None)
+        if btn is not None:
+            try:
+                btn.configure(state="normal", text="↻  MAJ")
+            except Exception:
+                pass
+
+        state = result.get("state", "error")
+        n = int(result.get("behind", 0) or 0)
+        if state == "available" and n > 0:
+            self._show_update_banner(n)
+            return
+
+        messages = {
+            "uptodate":     ("Mise a jour", "Vous etes a jour."),
+            "not_git":      ("Mise a jour", "Installation sans .git : MAJ automatique desactivee."),
+            "fetch_failed": ("Mise a jour", "Echec du fetch (hors-ligne ou git absent du PATH)."),
+            "wrong_branch": ("Mise a jour", "Branche differente de 'main' : MAJ desactivee."),
+            "dirty":        ("Mise a jour", "Modifications locales en cours : commit ou stash requis."),
+            "ahead":        ("Mise a jour", "Commits locaux en avance sur origin/main : push ou reset requis."),
+            "error":        ("Mise a jour", "Erreur : " + str(result.get("err") or "inconnue")),
+        }
+        title, msg = messages.get(state, ("Mise a jour", "Etat inconnu."))
+        if state == "uptodate":
+            messagebox.showinfo(title, msg)
+        elif state in ("fetch_failed", "error"):
+            messagebox.showerror(title, msg)
+        else:
+            messagebox.showwarning(title, msg)
+
     def _dismiss_update_banner(self):
         try:
             self.update_banner.grid_remove()
@@ -575,6 +626,11 @@ class SelfbotManagerApp(ctk.CTk):
                           variant="default", width=100).pack(side="right", padx=4)
         self._mk_button(theme_box, "🎨  Couleurs", command=self._open_theme_customizer,
                           variant="ghost", width=110).pack(side="right", padx=4)
+        self.check_updates_btn = self._mk_button(
+            theme_box, "↻  MAJ", command=self._check_updates_now,
+            variant="ghost", width=90,
+        )
+        self.check_updates_btn.pack(side="right", padx=4)
 
         # Action buttons
         actions = ctk.CTkFrame(top, fg_color="transparent")

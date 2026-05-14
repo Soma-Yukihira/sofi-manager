@@ -165,6 +165,32 @@ def check_in_background(on_update_available: Callable[[int], None]) -> None:
     t.start()
 
 
+def fetch_and_status() -> dict:
+    """
+    For the manual `Verifier les MAJ` button: fetch then describe what
+    the updater would do. Unlike `check_in_background`, this distinguishes
+    the various non-`available` states so the UI can tell the user *why*
+    nothing will happen.
+
+    Returns a dict with `state` in:
+        available, uptodate, not_git, fetch_failed,
+        wrong_branch, dirty, ahead
+    and `behind` (int, only meaningful for `available`).
+    """
+    if not is_git_clone():
+        return {"state": "not_git", "behind": 0}
+    if not _fetch():
+        return {"state": "fetch_failed", "behind": 0}
+    if current_branch() != "main":
+        return {"state": "wrong_branch", "behind": 0}
+    if has_local_changes():
+        return {"state": "dirty", "behind": 0}
+    if ahead_count() > 0:
+        return {"state": "ahead", "behind": 0}
+    n = behind_count()
+    return {"state": "available" if n > 0 else "uptodate", "behind": n}
+
+
 def apply_and_restart() -> tuple[bool, str]:
     """Called when the user clicks `Restart now`. Pulls then re-execs."""
     if not _safe_to_pull():
