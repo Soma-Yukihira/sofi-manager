@@ -74,7 +74,11 @@ def _enable_windows_vt() -> None:
         return
     try:
         import ctypes
-        kernel32 = ctypes.windll.kernel32
+        # ctypes.windll only exists on Windows; the os.name guard above
+        # makes this branch unreachable on Linux/macOS. The dual ignore
+        # silences mypy on Linux (attr-defined) without warning on
+        # Windows where the attribute resolves cleanly (unused-ignore).
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
         h = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
         # ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING
         kernel32.SetConsoleMode(h, 7)

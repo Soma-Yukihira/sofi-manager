@@ -312,7 +312,9 @@ class SelfbotManagerApp(ctk.CTk):
                 # Force Windows à utiliser une AppUserModelID dédiée
                 # → le taskbar regroupe sous notre icône au lieu de pythonw.exe
                 import ctypes
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                # `ctypes.windll` only exists on Windows; dual ignore handles
+                # both platforms (see cli.py:_enable_windows_vt for details).
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(  # type: ignore[attr-defined,unused-ignore]
                     "Soma-Yukihira.SelfbotManager.1"
                 )
             except Exception:
