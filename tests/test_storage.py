@@ -1,0 +1,259 @@
+"""Tests for the SQLite-backed grab history (storage.py)."""
+
+from __future__ import annotations
+
+import os
+import sqlite3
+import time
+import unittest
+from contextlib import closing
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+import storage
+from storage import GrabRecord, default_db_path, init_db, iter_grabs, record_grab
+
+
+class _TmpDB(unittest.TestCase):
+    """Each test gets a clean DB path under a tmp dir."""
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "grabs.db"
+        # The init cache is process-global — flush it between tests so a stale
+        # entry from a previous run can't mask a missing init.
+        storage._initialized.clear()
+
+
+class InitDbTests(_TmpDB):
+    def test_creates_file_and_schema(self):
+        path = init_db(self.db_path)
+        self.assertEqual(path, self.db_path)
+        self.assertTrue(self.db_path.exists())
+        with closing(sqlite3.connect(str(self.db_path))) as conn:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+        self.assertIn("grabs", tables)
+
+    def test_creates_parent_directory(self):
+        nested = self.db_path.parent / "deep" / "nest" / "grabs.db"
+        init_db(nested)
+        self.assertTrue(nested.exists())
+
+    def test_idempotent(self):
+        init_db(self.db_path)
+        # Insert a row, then call init_db again — row must survive.
+        record_grab(GrabRecord(bot_label="bot[1]", success=True), path=self.db_path)
+        init_db(self.db_path)
+        rows = list(iter_grabs(self.db_path))
+        self.assertEqual(len(rows), 1)
+
+    def test_creates_useful_indexes(self):
+        init_db(self.db_path)
+        with closing(sqlite3.connect(str(self.db_path))) as conn:
+            indexes = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            )}
+        self.assertIn("idx_grabs_ts", indexes)
+        self.assertIn("idx_grabs_bot_ts", indexes)
+
+    def test_enables_wal_mode(self):
+        init_db(self.db_path)
+        with closing(sqlite3.connect(str(self.db_path))) as conn:
+            mode = conn.execute("PRAGMA journal_mode;").fetchone()[0]
+        self.assertEqual(mode.lower(), "wal")
+
+    def test_marks_path_as_initialized(self):
+        init_db(self.db_path)
+        self.assertIn(str(self.db_path), storage._initialized)
+
+
+class RecordGrabTests(_TmpDB):
+    def test_round_trip_full_record(self):
+        rec = GrabRecord(
+            ts=1_700_000_000,
+            bot_label="bot[2]",
+            channel_id=1234567890,
+            card_name="Hatsune Miku",
+            series="Vocaloid",
+            rarity="SR",
+            hearts=512,
+            score=0.873,
+            success=True,
+            error_code=None,
+        )
+        record_grab(rec, path=self.db_path)
+        rows = list(iter_grabs(self.db_path))
+        self.assertEqual(len(rows), 1)
+        got = rows[0]
+        self.assertEqual(got.bot_label, "bot[2]")
+        self.assertEqual(got.channel_id, 1234567890)
+        self.assertEqual(got.card_name, "Hatsune Miku")
+        self.assertEqual(got.series, "Vocaloid")
+        self.assertEqual(got.rarity, "SR")
+        self.assertEqual(got.hearts, 512)
+        self.assertAlmostEqual(got.score, 0.873)
+        self.assertTrue(got.success)
+        self.assertIsNone(got.error_code)
+        self.assertEqual(got.ts, 1_700_000_000)
+        self.assertIsNotNone(got.id)
+
+    def test_default_ts_is_recent(self):
+        before = int(time.time())
+        record_grab(GrabRecord(bot_label="bot[1]"), path=self.db_path)
+        after = int(time.time())
+        rec = next(iter_grabs(self.db_path))
+        self.assertGreaterEqual(rec.ts, before)
+        self.assertLessEqual(rec.ts, after)
+
+    def test_failure_is_persisted_with_error_code(self):
+        record_grab(
+            GrabRecord(bot_label="bot[1]", success=False, error_code="40060"),
+            path=self.db_path,
+        )
+        rec = next(iter_grabs(self.db_path))
+        self.assertFalse(rec.success)
+        self.assertEqual(rec.error_code, "40060")
+
+    def test_auto_init_on_first_record(self):
+        # No explicit init_db call — record_grab must bootstrap the schema.
+        self.assertFalse(self.db_path.exists())
+        record_grab(GrabRecord(bot_label="bot[1]"), path=self.db_path)
+        self.assertTrue(self.db_path.exists())
+        self.assertEqual(len(list(iter_grabs(self.db_path))), 1)
+
+    def test_id_autoincrements(self):
+        for _ in range(3):
+            record_grab(GrabRecord(bot_label="bot[1]"), path=self.db_path)
+        ids = [r.id for r in iter_grabs(self.db_path)]
+        self.assertEqual(len(ids), 3)
+        self.assertEqual(len(set(ids)), 3)
+
+    def test_nullable_card_fields_accepted(self):
+        # A failed click before any card was scored — minimal record.
+        record_grab(
+            GrabRecord(bot_label="bot[1]", success=False, error_code="EmptyDrop"),
+            path=self.db_path,
+        )
+        rec = next(iter_grabs(self.db_path))
+        self.assertIsNone(rec.card_name)
+        self.assertIsNone(rec.series)
+        self.assertIsNone(rec.hearts)
+
+
+class IterGrabsTests(_TmpDB):
+    def setUp(self):
+        super().setUp()
+        # Seed: 3 bots, 2 records each, mixed success.
+        seeds = [
+            (1_700_000_100, "bot[1]", True, None),
+            (1_700_000_200, "bot[1]", False, "10008"),
+            (1_700_000_300, "bot[2]", True, None),
+            (1_700_000_400, "bot[2]", False, "429"),
+            (1_700_000_500, "bot[3]", True, None),
+            (1_700_000_600, "bot[3]", True, None),
+        ]
+        for ts, label, ok, err in seeds:
+            record_grab(
+                GrabRecord(ts=ts, bot_label=label, success=ok, error_code=err),
+                path=self.db_path,
+            )
+
+    def test_returns_empty_iter_when_db_missing(self):
+        missing = self.db_path.parent / "nope.db"
+        self.assertEqual(list(iter_grabs(missing)), [])
+
+    def test_orders_newest_first(self):
+        rows = list(iter_grabs(self.db_path))
+        timestamps = [r.ts for r in rows]
+        self.assertEqual(timestamps, sorted(timestamps, reverse=True))
+
+    def test_filter_by_bot_label(self):
+        rows = list(iter_grabs(self.db_path, bot_label="bot[2]"))
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r.bot_label == "bot[2]" for r in rows))
+
+    def test_filter_by_success_true(self):
+        rows = list(iter_grabs(self.db_path, success=True))
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(r.success for r in rows))
+
+    def test_filter_by_success_false(self):
+        rows = list(iter_grabs(self.db_path, success=False))
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(not r.success for r in rows))
+
+    def test_filter_by_ts_range(self):
+        rows = list(iter_grabs(self.db_path, since_ts=1_700_000_300, until_ts=1_700_000_500))
+        self.assertEqual(len(rows), 3)
+        for r in rows:
+            self.assertGreaterEqual(r.ts, 1_700_000_300)
+            self.assertLessEqual(r.ts, 1_700_000_500)
+
+    def test_filter_combined(self):
+        rows = list(iter_grabs(
+            self.db_path, bot_label="bot[1]", success=False,
+        ))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].error_code, "10008")
+
+    def test_limit(self):
+        rows = list(iter_grabs(self.db_path, limit=2))
+        self.assertEqual(len(rows), 2)
+
+
+class DefaultDbPathTests(unittest.TestCase):
+    def test_env_override_wins(self):
+        with patch.dict(os.environ, {"SOFI_DB_PATH": "/tmp/custom/grabs.db"}, clear=False):
+            self.assertEqual(default_db_path(), Path("/tmp/custom/grabs.db"))
+
+    def test_env_override_expands_user(self):
+        with patch.dict(os.environ, {"SOFI_DB_PATH": "~/sofi.db"}, clear=False):
+            self.assertEqual(default_db_path(), Path("~/sofi.db").expanduser())
+
+    def test_windows_uses_appdata(self):
+        env = {"APPDATA": r"C:\Users\Test\AppData\Roaming"}
+        with patch.dict(os.environ, env, clear=True), \
+                patch.object(storage.sys, "platform", "win32"):
+            path = default_db_path()
+        self.assertEqual(
+            path,
+            Path(r"C:\Users\Test\AppData\Roaming") / "sofi-manager" / "grabs.db",
+        )
+
+    def test_posix_uses_xdg_or_local_share(self):
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(storage.sys, "platform", "linux"), \
+                patch.object(Path, "home", staticmethod(lambda: Path("/home/test"))):
+            path = default_db_path()
+        self.assertEqual(path, Path("/home/test/.local/share/sofi-manager/grabs.db"))
+
+    def test_posix_respects_xdg_data_home(self):
+        env = {"XDG_DATA_HOME": "/custom/data"}
+        with patch.dict(os.environ, env, clear=True), \
+                patch.object(storage.sys, "platform", "linux"):
+            path = default_db_path()
+        self.assertEqual(path, Path("/custom/data/sofi-manager/grabs.db"))
+
+
+class FailureModeTests(_TmpDB):
+    def test_record_grab_raises_on_unwritable_path(self):
+        # A path whose parent is a regular file, not a directory.
+        blocker = Path(self._tmp.name) / "notadir"
+        blocker.write_text("x")
+        bad = blocker / "grabs.db"
+        with self.assertRaises((OSError, sqlite3.Error)):
+            record_grab(GrabRecord(bot_label="bot[1]"), path=bad)
+
+    def test_iter_grabs_does_not_init(self):
+        # Reading a non-existent DB must not create the file.
+        missing = self.db_path.parent / "phantom.db"
+        list(iter_grabs(missing))
+        self.assertFalse(missing.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

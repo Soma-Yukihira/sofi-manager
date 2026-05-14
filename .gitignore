@@ -6,6 +6,11 @@ settings.json
 *.token
 *.secret
 
+# Local grab history (SQLite) — user data, never commit
+grabs.db
+*.db-wal
+*.db-shm
+
 # =====================================================================
 # User-machine specific (paths inside)
 # =====================================================================
