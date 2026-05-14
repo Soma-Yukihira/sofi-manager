@@ -7,7 +7,7 @@
 ## Ce que fait ce projet
 
 Il se connecte à Discord avec **ton** token utilisateur, envoie `sd` à
-intervalles dans un salon, lit la réponse de SOFI et clique l'un des
+intervalles régulières dans un salon, lit la réponse de SOFI et clique sur l'un des
 boutons de réponse. Tout tourne depuis ta machine.
 
 ## Pourquoi c'est un problème
