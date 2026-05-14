@@ -557,7 +557,6 @@ class SelfbotManagerApp(ctk.CTk):
             "uptodate":     ("Mise a jour", "Vous etes a jour."),
             "not_git":      ("Mise a jour", "Installation sans .git : MAJ automatique desactivee."),
             "fetch_failed": ("Mise a jour", "Echec du fetch (hors-ligne ou git absent du PATH)."),
-            "wrong_branch": ("Mise a jour", "Branche differente de 'main' : MAJ desactivee."),
             "dirty":        ("Mise a jour", "Modifications locales en cours : commit ou stash requis."),
             "ahead":        ("Mise a jour", "Commits locaux en avance sur origin/main : push ou reset requis."),
             "error":        ("Mise a jour", "Erreur : " + str(result.get("err") or "inconnue")),

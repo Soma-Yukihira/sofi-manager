@@ -69,6 +69,19 @@ def behind_count() -> int:
     return _int(r.stdout) if r.returncode == 0 else 0
 
 
+def behind_main_count() -> int:
+    """Commits on `origin/main` not yet in the local `main` branch.
+
+    Used by the manual update check so it reports `available` based on what
+    end-users will be fast-forwarded to, regardless of whether the dev is
+    currently on a feature branch. Returns 0 if local `main` is missing or
+    the rev-list call fails."""
+    if not is_git_clone():
+        return 0
+    r = _git("rev-list", "--count", "main..origin/main")
+    return _int(r.stdout) if r.returncode == 0 else 0
+
+
 def ahead_count() -> int:
     if not is_git_clone():
         return 0
@@ -168,27 +181,29 @@ def check_in_background(on_update_available: Callable[[int], None]) -> None:
 def fetch_and_status() -> dict:
     """
     For the manual `Verifier les MAJ` button: fetch then describe what
-    the updater would do. Unlike `check_in_background`, this distinguishes
-    the various non-`available` states so the UI can tell the user *why*
-    nothing will happen.
+    the updater would do. The check tracks `origin/main` regardless of the
+    branch the user is currently on — devs working in feature branches
+    still want to know when main has moved. The dirty / ahead gates only
+    matter when the user is actually on main (i.e. eligible for the
+    inline `Restart now` fast-forward).
 
     Returns a dict with `state` in:
-        available, uptodate, not_git, fetch_failed,
-        wrong_branch, dirty, ahead
+        available, uptodate, not_git, fetch_failed, dirty, ahead
     and `behind` (int, only meaningful for `available`).
     """
     if not is_git_clone():
         return {"state": "not_git", "behind": 0}
     if not _fetch():
         return {"state": "fetch_failed", "behind": 0}
-    if current_branch() != "main":
-        return {"state": "wrong_branch", "behind": 0}
-    if has_local_changes():
-        return {"state": "dirty", "behind": 0}
-    if ahead_count() > 0:
-        return {"state": "ahead", "behind": 0}
-    n = behind_count()
-    return {"state": "available" if n > 0 else "uptodate", "behind": n}
+    n = behind_main_count()
+    if n == 0:
+        return {"state": "uptodate", "behind": 0}
+    if current_branch() == "main":
+        if has_local_changes():
+            return {"state": "dirty", "behind": n}
+        if ahead_count() > 0:
+            return {"state": "ahead", "behind": n}
+    return {"state": "available", "behind": n}
 
 
 def apply_and_restart() -> tuple[bool, str]:
