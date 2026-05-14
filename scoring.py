@@ -8,14 +8,19 @@ it can be evolved (and unit-tested) without touching the bot orchestrator.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 # Default-config knobs the scorer needs as fallbacks.
 _DEFAULT_RARITY_NORM = 2000.0
 _DEFAULT_HEARTS_NORM = 500.0
 _DEFAULT_RARITY_WEIGHT = 0.30
 _DEFAULT_HEARTS_WEIGHT = 0.70
 
+LogFn = Callable[[str, str], None]
 
-def _as_float(value, default):
+
+def _as_float(value: Any, default: float) -> float:
     # Local copy of bot_core's coercion helper — duplicating ~6 lines is
     # cheaper than introducing a circular import via a shared utils module.
     try:
@@ -24,7 +29,7 @@ def _as_float(value, default):
         return float(default)
 
 
-def score_card(card, cfg):
+def score_card(card: dict[str, Any], cfg: dict[str, Any]) -> float:
     rarity_norm = max(1.0, _as_float(cfg.get("rarity_norm"), _DEFAULT_RARITY_NORM))
     hearts_norm = max(1.0, _as_float(cfg.get("hearts_norm"), _DEFAULT_HEARTS_NORM))
     rarity_weight = max(0.0, _as_float(cfg.get("score_rarity_weight"), _DEFAULT_RARITY_WEIGHT))
@@ -39,13 +44,13 @@ def score_card(card, cfg):
     )
 
 
-def choose_card(cards, cfg, log):
+def choose_card(cards: list[dict[str, Any]], cfg: dict[str, Any], log: LogFn) -> int:
     """Retourne l'index de la carte à cliquer, en logguant le raisonnement."""
     scored = [(c, score_card(c, cfg)) for c in cards]
     best_card, best_score = max(scored, key=lambda x: x[1])
 
-    wishlist_card = None
-    wishlist_score = 0
+    wishlist_card: dict[str, Any] | None = None
+    wishlist_score = 0.0
     wishlist_label = ""
 
     for card, score in scored:

@@ -14,8 +14,10 @@ import asyncio
 import queue
 import random
 import threading
+from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
+from typing import Any
 
 import discord
 
@@ -35,7 +37,7 @@ from scoring import choose_card, score_card
 SOFI_ID = 853629533855809596
 
 
-def default_config() -> dict:
+def default_config() -> dict[str, Any]:
     """Config par défaut pour un nouveau bot."""
     return {
         "name": "Nouveau bot",
@@ -61,14 +63,14 @@ def default_config() -> dict:
     }
 
 
-def _as_float(value, default):
+def _as_float(value: Any, default: float) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return float(default)
 
 
-def _as_int(value, default):
+def _as_int(value: Any, default: int) -> int:
     if isinstance(value, bool):
         return int(default)
     if isinstance(value, int):
@@ -87,7 +89,7 @@ def _as_int(value, default):
         return int(default)
 
 
-def _as_bool(value, default=False):
+def _as_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -99,7 +101,7 @@ def _as_bool(value, default=False):
     return bool(default)
 
 
-def sanitize_config(cfg: dict) -> dict:
+def sanitize_config(cfg: dict[str, Any]) -> dict[str, Any]:
     """Normalize runtime config in-place and return it.
 
     The GUI intentionally stays permissive while typing. This guard keeps the
@@ -117,7 +119,7 @@ def sanitize_config(cfg: dict) -> dict:
     cfg["drop_channel"] = _as_int(cfg.get("drop_channel"), 0)
     cfg["sofi_id"] = _as_int(cfg.get("sofi_id"), SOFI_ID)
 
-    channels = []
+    channels: list[int] = []
     for raw in cfg.get("all_channels") or []:
         cid = _as_int(raw, 0)
         if cid and cid not in channels:
@@ -163,7 +165,7 @@ def sanitize_config(cfg: dict) -> dict:
     return cfg
 
 
-def _seconds_until(hour, minute=0):
+def _seconds_until(hour: int, minute: int = 0) -> float:
     now = datetime.now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
@@ -181,24 +183,24 @@ class SelfBot:
     STATUS_RUNNING = "running"
     STATUS_ERROR = "error"
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict[str, Any]):
         self.config = sanitize_config(config)
-        self.log_queue: queue.Queue = queue.Queue()
+        self.log_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self.status = self.STATUS_STOPPED
-        self.status_callback = None  # appelé avec le nouveau statut
+        self.status_callback: Callable[[str], None] | None = None  # appelé avec le nouveau statut
 
-        self._client = None
-        self._loop = None
+        self._client: discord.Client | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
-        self._drop_task = None
-        self._cooldown_task = None
-        self._night_task = None
-        self._sd_watchdogs: dict[int, asyncio.Task] = {}
+        self._drop_task: asyncio.Task[Any] | None = None
+        self._cooldown_task: asyncio.Task[Any] | None = None
+        self._night_task: asyncio.Task[Any] | None = None
+        self._sd_watchdogs: dict[int, asyncio.Task[Any]] = {}
         self._sd_watchdog_timeout = 60.0
 
     # ---------- API publique ----------
 
-    def log(self, level, text):
+    def log(self, level: str, text: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         self.log_queue.put((level, f"[{ts}] {text}"))
 
@@ -223,14 +225,14 @@ class SelfBot:
         self._thread.start()
         return True
 
-    def stop(self, timeout=5):
+    def stop(self, timeout: float = 5) -> None:
         if self.status == self.STATUS_STOPPED:
             return
         if not self._loop or not self._client or self._loop.is_closed():
             self._set_status(self.STATUS_STOPPED)
             return
 
-        async def _close():
+        async def _close() -> None:
             for task in (self._drop_task, self._cooldown_task, self._night_task):
                 if task and not task.done():
                     task.cancel()
@@ -239,6 +241,7 @@ class SelfBot:
                     task.cancel()
             self._sd_watchdogs.clear()
             try:
+                assert self._client is not None
                 await self._client.close()
             except Exception:
                 pass
@@ -257,7 +260,7 @@ class SelfBot:
 
     # ---------- internes ----------
 
-    def _set_status(self, status):
+    def _set_status(self, status: str) -> None:
         self.status = status
         if self.status_callback:
             try:
@@ -265,7 +268,7 @@ class SelfBot:
             except Exception:
                 pass
 
-    def _run(self):
+    def _run(self) -> None:
         try:
             sanitize_config(self.config)
             self._loop = asyncio.new_event_loop()
@@ -294,18 +297,20 @@ class SelfBot:
                 self._set_status(self.STATUS_STOPPED)
                 self.log("system", "Bot arrêté")
 
-    def _setup_events(self):
+    def _setup_events(self) -> None:
+        assert self._client is not None
         client = self._client
         cfg = self.config
 
         @client.event
-        async def on_ready():
+        async def on_ready() -> None:
             self.log("success", f"Connecté en tant que {client.user}")
             self._set_status(self.STATUS_RUNNING)
             for cid in cfg["all_channels"]:
                 ch = client.get_channel(cid)
                 if ch:
-                    self.log("info", f"Salon écouté : #{ch.name}")
+                    name = getattr(ch, "name", str(cid))
+                    self.log("info", f"Salon écouté : #{name}")
                 else:
                     self.log("warn", f"Salon introuvable : {cid}")
             self._restart_drop_loop()
@@ -313,12 +318,13 @@ class SelfBot:
                 self._night_task = asyncio.create_task(self._night_pause_loop())
 
         @client.event
-        async def on_message(message):
+        async def on_message(message: discord.Message) -> None:
             await self._on_message(message)
 
-    async def _drop_loop(self):
+    async def _drop_loop(self) -> None:
         cfg = self.config
-        channel = self._client.get_channel(cfg["drop_channel"])
+        assert self._client is not None
+        channel: Any = self._client.get_channel(cfg["drop_channel"])
         if not channel:
             self.log("error", f"DROP_CHANNEL introuvable : {cfg['drop_channel']}")
             return
@@ -336,12 +342,12 @@ class SelfBot:
                 self.log("error", f"Erreur drop: {e}")
                 await asyncio.sleep(30)
 
-    def _restart_drop_loop(self):
+    def _restart_drop_loop(self) -> None:
         if self._drop_task and not self._drop_task.done():
             self._drop_task.cancel()
         self._drop_task = asyncio.create_task(self._drop_loop())
 
-    def _arm_sd_watchdog(self, channel):
+    def _arm_sd_watchdog(self, channel: Any) -> None:
         existing = self._sd_watchdogs.get(channel.id)
         if existing and not existing.done():
             existing.cancel()
@@ -349,12 +355,12 @@ class SelfBot:
             self._sd_watchdog_coro(channel)
         )
 
-    def _cancel_sd_watchdog(self, channel_id):
+    def _cancel_sd_watchdog(self, channel_id: int) -> None:
         task = self._sd_watchdogs.pop(channel_id, None)
         if task and not task.done():
             task.cancel()
 
-    async def _sd_watchdog_coro(self, channel):
+    async def _sd_watchdog_coro(self, channel: Any) -> None:
         timeout = self._sd_watchdog_timeout
         try:
             await asyncio.sleep(timeout)
@@ -369,7 +375,7 @@ class SelfBot:
                 f"(SOFI down, salon saturé, ou drop pris par un autre user ?)",
             )
 
-    async def _handle_cooldown(self, wait):
+    async def _handle_cooldown(self, wait: float) -> None:
         cfg = self.config
         extra = random.uniform(cfg["cooldown_extra_min"], cfg["cooldown_extra_max"])
         total = wait + extra
@@ -380,7 +386,7 @@ class SelfBot:
         except asyncio.CancelledError:
             pass
 
-    async def _night_pause_loop(self):
+    async def _night_pause_loop(self) -> None:
         cfg = self.config
         random.seed()
         while True:
@@ -408,7 +414,13 @@ class SelfBot:
             except asyncio.CancelledError:
                 raise
 
-    def _record_grab_safe(self, card, channel_id, success, error_code):
+    def _record_grab_safe(
+        self,
+        card: dict[str, Any],
+        channel_id: int,
+        success: bool,
+        error_code: str | None,
+    ) -> None:
         """Persist a grab attempt — never let DB errors propagate into the bot."""
         try:
             storage.record_grab(storage.GrabRecord(
@@ -425,8 +437,9 @@ class SelfBot:
         except Exception as e:
             self.log("warn", f"⚠️ DB grabs indisponible ({type(e).__name__}: {e})")
 
-    async def _on_message(self, message):
+    async def _on_message(self, message: discord.Message) -> None:
         cfg = self.config
+        assert self._client is not None
         client = self._client
         if message.author.id != cfg.get("sofi_id", SOFI_ID):
             return
@@ -440,6 +453,7 @@ class SelfBot:
         preview = content_clean.strip().replace("\n", " ⏎ ")[:160] or "(vide)"
         self.log("info", f"📥 SOFI: {preview}")
 
+        assert client.user is not None  # on_message only fires after login
         my_id = client.user.id
         mentions_me = (
             client.user.mentioned_in(message)
@@ -475,7 +489,8 @@ class SelfBot:
                 self.log("info", "⏭️ Drop ignoré (pas le tien)")
             return
 
-        self.log("system", f"🎴 Drop détecté dans #{message.channel.name}")
+        channel_name = getattr(message.channel, "name", str(message.channel.id))
+        self.log("system", f"🎴 Drop détecté dans #{channel_name}")
         cards = smart_parse_cards(full_text)
         if not cards:
             self.log("error", "Aucune carte parsée — voir log SOFI au-dessus")

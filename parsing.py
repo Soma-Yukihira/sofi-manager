@@ -10,6 +10,8 @@ each function is trivially unit-testable in isolation.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from typing import Any
 
 # Multilingual SOFI triggers (FR + EN).
 _DROP_TRIGGER_RE = re.compile(
@@ -22,8 +24,8 @@ _COOLDOWN_RE = re.compile(
 )
 
 
-def parse_cards(content):
-    cards = []
+def parse_cards(content: str) -> list[dict[str, Any]]:
+    cards: list[dict[str, Any]] = []
     pattern = r'G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)(?=\s*`\d|$)'
     for i, m in enumerate(re.finditer(pattern, content)):
         cards.append({
@@ -36,8 +38,8 @@ def parse_cards(content):
     return cards
 
 
-def parse_cards_with_hearts(content):
-    cards = []
+def parse_cards_with_hearts(content: str) -> list[dict[str, Any]]:
+    cards: list[dict[str, Any]] = []
     pattern = r'G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)\s*•\s*(\d+)'
     for i, m in enumerate(re.finditer(pattern, content)):
         cards.append({
@@ -50,11 +52,11 @@ def parse_cards_with_hearts(content):
     return cards
 
 
-def smart_parse_cards(content):
+def smart_parse_cards(content: str) -> list[dict[str, Any]]:
     return parse_cards_with_hearts(content) or parse_cards(content)
 
 
-def parse_button_hearts(label):
+def parse_button_hearts(label: Any) -> int | None:
     """'43' → 43, '1.2k' → 1200, '1k' → 1000. None si invalide."""
     label = str(label).strip().lower()
     if label.endswith("k"):
@@ -70,7 +72,7 @@ def parse_button_hearts(label):
         return None
 
 
-def parse_cooldown_seconds(content):
+def parse_cooldown_seconds(content: str) -> int | None:
     m = re.search(
         r'(?:pr[êe]t\s+dans|ready\s+in)\s*:?\s*(?:(\d+)\s*m\s*)?(\d+)\s*s',
         content, re.IGNORECASE,
@@ -82,7 +84,7 @@ def parse_cooldown_seconds(content):
     return None
 
 
-def extract_full_text(message):
+def extract_full_text(message: Any) -> str:
     """Combine message.content + tous les embeds en un seul string.
     SOFI met parfois les cartes dans un embed plutôt qu'en texte brut."""
     parts = [message.content or ""]
@@ -105,18 +107,18 @@ def extract_full_text(message):
     return "\n".join(p for p in parts if p)
 
 
-def iter_component_children(components):
+def iter_component_children(components: Any) -> Iterator[Any]:
     """Yield every child component, no matter how many action rows Discord uses."""
     for row in components or []:
         yield from getattr(row, "children", []) or []
 
 
-def format_drop_recipients(message, exclude_id):
+def format_drop_recipients(message: Any, exclude_id: int | None) -> str:
     """Return '@name' or '@a, @b' for users mentioned in the drop, excluding self.
 
     Returns empty string if nobody else is mentioned (drop format we don't
     recognise)."""
-    names = []
+    names: list[str] = []
     for user in getattr(message, "mentions", None) or []:
         uid = getattr(user, "id", None)
         if uid == exclude_id:
