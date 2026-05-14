@@ -1,4 +1,4 @@
 discord.py-self>=2.1.0,<3
 customtkinter>=5.2.2,<6
 cryptography>=42,<49
-keyring>=24,<26
+keyring>=25.7.0,<26
