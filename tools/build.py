@@ -30,13 +30,12 @@ SPEC = ROOT / "selfbot-manager.spec"
 def _ensure_pyinstaller() -> None:
     try:
         import PyInstaller  # noqa: F401
+
         return
     except ImportError:
         pass
     print("[build] PyInstaller not found, installing...", flush=True)
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "--quiet", "pyinstaller>=6.0"]
-    )
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "pyinstaller>=6.0"])
 
 
 def _clean() -> None:
@@ -72,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     env["SELFBOT_ONEFILE"] = "1" if args.onefile else "0"
 
     cmd = [
-        sys.executable, "-m", "PyInstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--noconfirm",
         str(SPEC),
     ]

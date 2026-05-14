@@ -47,25 +47,26 @@ CONFIG_PATH = USER_DIR / "bots.json"
 # ANSI palette (24-bit → graceful fallback)
 # =============================================
 
+
 class Color:
-    RESET   = "\x1b[0m"
-    BOLD    = "\x1b[1m"
-    DIM     = "\x1b[2m"
-    GOLD    = "\x1b[38;2;212;175;55m"
-    GOLDBR  = "\x1b[38;2;244;208;63m"
-    GREEN   = "\x1b[38;2;74;222;128m"
-    RED     = "\x1b[38;2;248;113;113m"
-    YELLOW  = "\x1b[38;2;251;191;36m"
-    GRAY    = "\x1b[38;2;156;163;175m"
+    RESET = "\x1b[0m"
+    BOLD = "\x1b[1m"
+    DIM = "\x1b[2m"
+    GOLD = "\x1b[38;2;212;175;55m"
+    GOLDBR = "\x1b[38;2;244;208;63m"
+    GREEN = "\x1b[38;2;74;222;128m"
+    RED = "\x1b[38;2;248;113;113m"
+    YELLOW = "\x1b[38;2;251;191;36m"
+    GRAY = "\x1b[38;2;156;163;175m"
     DIMGRAY = "\x1b[38;2;107;114;128m"
 
 
 LEVEL_COLOR = {
-    "info":    Color.GRAY,
+    "info": Color.GRAY,
     "success": Color.GREEN,
-    "error":   Color.RED,
-    "warn":    Color.YELLOW,
-    "system":  Color.GOLD,
+    "error": Color.RED,
+    "warn": Color.YELLOW,
+    "system": Color.GOLD,
 }
 
 
@@ -75,6 +76,7 @@ def _enable_windows_vt() -> None:
         return
     try:
         import ctypes
+
         # ctypes.windll only exists on Windows; the os.name guard above
         # makes this branch unreachable on Linux/macOS. The dual ignore
         # silences mypy on Linux (attr-defined) without warning on
@@ -100,6 +102,7 @@ def cprint(text: str = "", end: str = "\n") -> None:
 # =============================================
 # Storage
 # =============================================
+
 
 def load_bots() -> list[dict[str, Any]]:
     if not CONFIG_PATH.exists():
@@ -149,6 +152,7 @@ def header(title: str) -> None:
 # =============================================
 # Commands
 # =============================================
+
 
 def cmd_list(args: argparse.Namespace) -> int:
     bots = load_bots()
@@ -212,7 +216,9 @@ def _ask_int(prompt: str, default: int | None = None) -> int:
 
 
 def _ask_list(prompt: str) -> list[int]:
-    cprint(f"{Color.GOLD}? {Color.RESET}{prompt}  {Color.DIMGRAY}(one ID per line, blank to finish){Color.RESET}")
+    cprint(
+        f"{Color.GOLD}? {Color.RESET}{prompt}  {Color.DIMGRAY}(one ID per line, blank to finish){Color.RESET}"
+    )
     out: list[int] = []
     while True:
         raw = input(f"  {Color.DIMGRAY}>{Color.RESET} ").strip()
@@ -242,7 +248,9 @@ def cmd_add(args: argparse.Namespace) -> int:
 
         # everything else: defaults are fine; keep wizard short
         cprint()
-        cprint(f"{Color.DIMGRAY}Defaults will be used for timing, scoring, night pause and wishlist.{Color.RESET}")
+        cprint(
+            f"{Color.DIMGRAY}Defaults will be used for timing, scoring, night pause and wishlist.{Color.RESET}"
+        )
         cprint(f"{Color.DIMGRAY}Edit bots.json or use the GUI for fine-tuning.{Color.RESET}")
     except (EOFError, KeyboardInterrupt):
         cprint(f"\n{Color.YELLOW}Cancelled.{Color.RESET}")
@@ -255,7 +263,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     cprint()
     cprint(f"{Color.GREEN}OK{Color.RESET}  Bot '{cfg['name']}' saved.")
-    cprint(f"   Run with:  {Color.BOLD}python cli.py run \"{cfg['name']}\"{Color.RESET}")
+    cprint(f'   Run with:  {Color.BOLD}python cli.py run "{cfg["name"]}"{Color.RESET}')
     return 0
 
 
@@ -266,9 +274,13 @@ def cmd_rm(args: argparse.Namespace) -> int:
         cprint(f"{Color.RED}No bot named '{args.name}'.{Color.RESET}")
         return 1
     if not args.yes:
-        confirm = input(
-            f"{Color.YELLOW}Delete '{bot.get('name')}'? this cannot be undone. (y/N) {Color.RESET}"
-        ).strip().lower()
+        confirm = (
+            input(
+                f"{Color.YELLOW}Delete '{bot.get('name')}'? this cannot be undone. (y/N) {Color.RESET}"
+            )
+            .strip()
+            .lower()
+        )
         if confirm not in ("y", "yes"):
             cprint("aborted.")
             return 0
@@ -301,17 +313,19 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     def _on_status(bot: SelfBot, status: str) -> None:
         tag = {
-            "running":  f"{Color.GREEN}● running{Color.RESET}",
+            "running": f"{Color.GREEN}● running{Color.RESET}",
             "starting": f"{Color.YELLOW}● connecting{Color.RESET}",
-            "stopped":  f"{Color.DIMGRAY}● stopped{Color.RESET}",
-            "error":    f"{Color.RED}● error{Color.RESET}",
+            "stopped": f"{Color.DIMGRAY}● stopped{Color.RESET}",
+            "error": f"{Color.RED}● error{Color.RESET}",
         }.get(status, status)
-        prefix = f"{Color.BOLD}{Color.GOLD}{(bot.config.get('name') or '?'):>{name_pad}}{Color.RESET}"
+        prefix = (
+            f"{Color.BOLD}{Color.GOLD}{(bot.config.get('name') or '?'):>{name_pad}}{Color.RESET}"
+        )
         cprint(f"{prefix}  {tag}")
 
     for cfg in selected:
         bot = SelfBot(cfg)
-        bot.status_callback = (lambda s, b=bot: _on_status(b, s))
+        bot.status_callback = lambda s, b=bot: _on_status(b, s)
         bot.start()
         instances.append(bot)
 
@@ -322,6 +336,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     def _signal_handler(*_: Any) -> None:
         stop_requested["v"] = True
+
     try:
         signal.signal(signal.SIGINT, _signal_handler)
         signal.signal(signal.SIGTERM, _signal_handler)
@@ -384,13 +399,17 @@ def cmd_run(args: argparse.Namespace) -> int:
 # Argparse plumbing
 # =============================================
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="cli.py",
         description="Selfbot Manager · headless interface (VPS-friendly).",
     )
-    p.add_argument("--no-color", action="store_true",
-                    help="Disable ANSI colors (useful for log files / dumb TTYs).")
+    p.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors (useful for log files / dumb TTYs).",
+    )
     sub = p.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     sub.add_parser("list", help="List all configured bots.")
@@ -402,12 +421,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     prm = sub.add_parser("rm", help="Remove a bot.")
     prm.add_argument("name", help="Bot name or _id.")
-    prm.add_argument("-y", "--yes", action="store_true",
-                      help="Skip confirmation prompt.")
+    prm.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt.")
 
     prun = sub.add_parser("run", help="Run one or more bots in the foreground.")
-    prun.add_argument("names", nargs="*",
-                       help="Bot names to run (default: all configured bots).")
+    prun.add_argument("names", nargs="*", help="Bot names to run (default: all configured bots).")
 
     return p
 
@@ -430,11 +447,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         _enable_windows_vt()
 
     handlers = {
-        "list":  cmd_list,
-        "show":  cmd_show,
-        "add":   cmd_add,
-        "rm":    cmd_rm,
-        "run":   cmd_run,
+        "list": cmd_list,
+        "show": cmd_show,
+        "add": cmd_add,
+        "rm": cmd_rm,
+        "run": cmd_run,
     }
     fn = handlers[args.command]
     try:

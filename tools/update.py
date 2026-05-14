@@ -27,18 +27,29 @@ IS_TTY = sys.stdout.isatty()
 def _c(code: str) -> str:
     return f"\x1b[{code}m" if IS_TTY else ""
 
-GOLD   = _c("38;2;212;175;55")
-GREEN  = _c("38;2;74;222;128")
-RED    = _c("38;2;248;113;113")
+
+GOLD = _c("38;2;212;175;55")
+GREEN = _c("38;2;74;222;128")
+RED = _c("38;2;248;113;113")
 YELLOW = _c("38;2;251;191;36")
-GRAY   = _c("38;2;156;163;175")
-RESET  = _c("0")
+GRAY = _c("38;2;156;163;175")
+RESET = _c("0")
 
 
-def step(msg: str) -> None: print(f"{GRAY}->  {msg}{RESET}")
-def ok(msg: str)   -> None: print(f"{GREEN}OK  {msg}{RESET}")
-def warn(msg: str) -> None: print(f"{YELLOW}!   {msg}{RESET}")
-def err(msg: str)  -> None: print(f"{RED}X   {msg}{RESET}", file=sys.stderr)
+def step(msg: str) -> None:
+    print(f"{GRAY}->  {msg}{RESET}")
+
+
+def ok(msg: str) -> None:
+    print(f"{GREEN}OK  {msg}{RESET}")
+
+
+def warn(msg: str) -> None:
+    print(f"{YELLOW}!   {msg}{RESET}")
+
+
+def err(msg: str) -> None:
+    print(f"{RED}X   {msg}{RESET}", file=sys.stderr)
 
 
 def _git(*args: str, capture: bool = True) -> subprocess.CompletedProcess:
@@ -52,7 +63,7 @@ def _git(*args: str, capture: bool = True) -> subprocess.CompletedProcess:
 
 def _find_pip() -> Path | None:
     pip_name = "pip.exe" if os.name == "nt" else "pip"
-    scripts  = "Scripts" if os.name == "nt" else "bin"
+    scripts = "Scripts" if os.name == "nt" else "bin"
     for venv in ("env", "venv", ".venv"):
         candidate = ROOT / venv / scripts / pip_name
         if candidate.exists():
@@ -81,7 +92,7 @@ def main() -> int:
         return 1
 
     behind = int(_git("rev-list", "--count", "HEAD..@{u}").stdout.strip() or "0")
-    ahead  = int(_git("rev-list", "--count", "@{u}..HEAD").stdout.strip() or "0")
+    ahead = int(_git("rev-list", "--count", "@{u}..HEAD").stdout.strip() or "0")
 
     if behind == 0 and ahead == 0:
         ok(f"Already up to date  (commit {old_hash})")

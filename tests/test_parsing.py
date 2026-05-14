@@ -71,11 +71,13 @@ class FormatDropRecipientsTests(unittest.TestCase):
         self.assertEqual(format_drop_recipients(msg, 42), "@raw")
 
     def test_joins_multiple(self):
-        msg = FakeMessage([
-            FakeMentionedUser(1, display_name="a"),
-            FakeMentionedUser(42, display_name="me"),
-            FakeMentionedUser(2, display_name="b"),
-        ])
+        msg = FakeMessage(
+            [
+                FakeMentionedUser(1, display_name="a"),
+                FakeMentionedUser(42, display_name="me"),
+                FakeMentionedUser(2, display_name="b"),
+            ]
+        )
         self.assertEqual(format_drop_recipients(msg, 42), "@a, @b")
 
 

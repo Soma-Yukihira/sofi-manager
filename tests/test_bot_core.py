@@ -15,14 +15,16 @@ from bot_core import (
 class SanitizeConfigTests(unittest.TestCase):
     def test_sanitize_config_restores_safe_numeric_ranges(self):
         cfg = default_config()
-        cfg.update({
-            "interval_min": 0,
-            "interval_max": 10,
-            "rarity_norm": 0,
-            "hearts_norm": 0,
-            "drop_channel": "123",
-            "all_channels": ["456", "123", "bad", "456"],
-        })
+        cfg.update(
+            {
+                "interval_min": 0,
+                "interval_max": 10,
+                "rarity_norm": 0,
+                "hearts_norm": 0,
+                "drop_channel": "123",
+                "all_channels": ["456", "123", "bad", "456"],
+            }
+        )
 
         sanitize_config(cfg)
 
@@ -109,10 +111,7 @@ class SelfBotStopTests(unittest.TestCase):
         elapsed = time.monotonic() - started
 
         try:
-            self.assertLess(
-                elapsed, 2.0,
-                f"stop() blocked {elapsed:.2f}s with hanging close()"
-            )
+            self.assertLess(elapsed, 2.0, f"stop() blocked {elapsed:.2f}s with hanging close()")
         finally:
             loop.call_soon_threadsafe(loop.stop)
             thr.join(timeout=2)
@@ -241,7 +240,9 @@ class RecordGrabSafeTests(unittest.TestCase):
         with unittest.mock.patch("bot_core.storage.record_grab") as rec:
             bot._record_grab_safe(
                 {"name": "X", "series": "Y", "rarity": None, "hearts": None},
-                channel_id=1, success=False, error_code="EmptyDrop",
+                channel_id=1,
+                success=False,
+                error_code="EmptyDrop",
             )
         sent = rec.call_args.args[0]
         self.assertIsNone(sent.rarity)

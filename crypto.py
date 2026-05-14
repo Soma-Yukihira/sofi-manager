@@ -131,7 +131,7 @@ def encrypt_token(plain: str) -> str:
 def decrypt_token(stored: str) -> str:
     if not stored or not is_encrypted(stored):
         return stored
-    payload = stored[len(_MARKER):]
+    payload = stored[len(_MARKER) :]
     try:
         return _get_cipher().decrypt(payload.encode("ascii")).decode("utf-8")
     except InvalidToken as e:

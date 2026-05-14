@@ -38,8 +38,7 @@ def score_card(card: dict[str, Any], cfg: dict[str, Any]) -> float:
     rarity_score = max(0.0, 1.0 - _as_float(card.get("rarity"), 0) / rarity_norm)
     hearts_score = min(1.0, max(0.0, _as_float(card.get("hearts"), 0) / hearts_norm))
     return round(
-        rarity_weight * rarity_score
-        + hearts_weight * hearts_score,
+        rarity_weight * rarity_score + hearts_weight * hearts_score,
         3,
     )
 
@@ -70,17 +69,37 @@ def choose_card(cards: list[dict[str, Any]], cfg: dict[str, Any], log: LogFn) ->
 
     if wishlist_card is not None:
         for card, score in scored:
-            log("info", f"  {card['name']} • {card['series']} → score {score} (G•{card['rarity']} | {card['hearts']}❤️)")
-        if best_score >= wishlist_score * cfg["wishlist_override_threshold"] and best_card != wishlist_card:
-            log("warn", f"⚡ {wishlist_label} ignoré : {wishlist_card['name']} (score {wishlist_score}) "
-                        f"< {best_card['name']} (score {best_score})")
-            log("success", f"💡 Meilleur score retenu : {best_card['name']} • {best_card['series']}")
+            log(
+                "info",
+                f"  {card['name']} • {card['series']} → score {score} (G•{card['rarity']} | {card['hearts']}❤️)",
+            )
+        if (
+            best_score >= wishlist_score * cfg["wishlist_override_threshold"]
+            and best_card != wishlist_card
+        ):
+            log(
+                "warn",
+                f"⚡ {wishlist_label} ignoré : {wishlist_card['name']} (score {wishlist_score}) "
+                f"< {best_card['name']} (score {best_score})",
+            )
+            log(
+                "success", f"💡 Meilleur score retenu : {best_card['name']} • {best_card['series']}"
+            )
             return best_card["index"]
-        log("success", f"{wishlist_label} : {wishlist_card['name']} • {wishlist_card['series']} "
-                      f"(G•{wishlist_card['rarity']} | {wishlist_card['hearts']}❤️ | score {wishlist_score})")
+        log(
+            "success",
+            f"{wishlist_label} : {wishlist_card['name']} • {wishlist_card['series']} "
+            f"(G•{wishlist_card['rarity']} | {wishlist_card['hearts']}❤️ | score {wishlist_score})",
+        )
         return wishlist_card["index"]
 
     for card, score in scored:
-        log("info", f"  {card['name']} • {card['series']} → score {score} (G•{card['rarity']} | {card['hearts']}❤️)")
-    log("success", f"💡 Meilleur score : {best_card['name']} • {best_card['series']} (score {best_score})")
+        log(
+            "info",
+            f"  {card['name']} • {card['series']} → score {score} (G•{card['rarity']} | {card['hearts']}❤️)",
+        )
+    log(
+        "success",
+        f"💡 Meilleur score : {best_card['name']} • {best_card['series']} (score {best_score})",
+    )
     return best_card["index"]

@@ -24,12 +24,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ICON = ROOT / "assets" / "app.ico"
-LNK  = ROOT / "Selfbot Manager.lnk"
+LNK = ROOT / "Selfbot Manager.lnk"
 
 
 def _find_target() -> tuple[str, str] | None:
     """Return (target_path, arguments) or None if nothing usable found."""
-    exe_onedir  = ROOT / "dist" / "SelfbotManager" / "SelfbotManager.exe"
+    exe_onedir = ROOT / "dist" / "SelfbotManager" / "SelfbotManager.exe"
     exe_onefile = ROOT / "dist" / "SelfbotManager.exe"
     for candidate in (exe_onedir, exe_onefile):
         if candidate.exists():
@@ -60,9 +60,7 @@ def _create_via_powershell(target: str, args: str) -> None:
         root=str(ROOT).replace("'", "''"),
         icon=str(ICON).replace("'", "''"),
     )
-    subprocess.check_call(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps]
-    )
+    subprocess.check_call(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps])
 
 
 def main() -> int:

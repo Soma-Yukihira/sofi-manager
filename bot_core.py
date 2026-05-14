@@ -151,8 +151,12 @@ def sanitize_config(cfg: dict[str, Any]) -> dict[str, Any]:
 
     cfg["rarity_norm"] = max(1.0, _as_float(cfg.get("rarity_norm"), defaults["rarity_norm"]))
     cfg["hearts_norm"] = max(1.0, _as_float(cfg.get("hearts_norm"), defaults["hearts_norm"]))
-    cfg["score_rarity_weight"] = max(0.0, _as_float(cfg.get("score_rarity_weight"), defaults["score_rarity_weight"]))
-    cfg["score_hearts_weight"] = max(0.0, _as_float(cfg.get("score_hearts_weight"), defaults["score_hearts_weight"]))
+    cfg["score_rarity_weight"] = max(
+        0.0, _as_float(cfg.get("score_rarity_weight"), defaults["score_rarity_weight"])
+    )
+    cfg["score_hearts_weight"] = max(
+        0.0, _as_float(cfg.get("score_hearts_weight"), defaults["score_hearts_weight"])
+    )
     cfg["wishlist_override_threshold"] = max(
         1.0,
         _as_float(cfg.get("wishlist_override_threshold"), defaults["wishlist_override_threshold"]),
@@ -176,6 +180,7 @@ def _seconds_until(hour: int, minute: int = 0) -> float:
 # =============================================
 # SelfBot
 # =============================================
+
 
 class SelfBot:
     STATUS_STOPPED = "stopped"
@@ -255,7 +260,11 @@ class SelfBot:
         except Exception as e:
             self.log("error", f"Erreur arrêt: {e}")
         finally:
-            if self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
+            if (
+                self._thread
+                and self._thread.is_alive()
+                and threading.current_thread() is not self._thread
+            ):
                 self._thread.join(timeout=timeout)
 
     # ---------- internes ----------
@@ -334,7 +343,7 @@ class SelfBot:
                 self.log("info", f"Drop envoyé dans #{channel.name}")
                 self._arm_sd_watchdog(channel)
                 interval = random.uniform(cfg["interval_min"], cfg["interval_max"])
-                self.log("info", f"⏳ Prochain drop dans {interval/60:.1f} min")
+                self.log("info", f"⏳ Prochain drop dans {interval / 60:.1f} min")
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 raise
@@ -351,9 +360,7 @@ class SelfBot:
         existing = self._sd_watchdogs.get(channel.id)
         if existing and not existing.done():
             existing.cancel()
-        self._sd_watchdogs[channel.id] = asyncio.create_task(
-            self._sd_watchdog_coro(channel)
-        )
+        self._sd_watchdogs[channel.id] = asyncio.create_task(self._sd_watchdog_coro(channel))
 
     def _cancel_sd_watchdog(self, channel_id: int) -> None:
         task = self._sd_watchdogs.pop(channel_id, None)
@@ -379,7 +386,10 @@ class SelfBot:
         cfg = self.config
         extra = random.uniform(cfg["cooldown_extra_min"], cfg["cooldown_extra_max"])
         total = wait + extra
-        self.log("info", f"⏳ Cooldown SOFI : {wait//60}m {wait%60}s + {extra:.0f}s extra → relance dans {total/60:.1f} min")
+        self.log(
+            "info",
+            f"⏳ Cooldown SOFI : {wait // 60}m {wait % 60}s + {extra:.0f}s extra → relance dans {total / 60:.1f} min",
+        )
         try:
             await asyncio.sleep(total)
             self._restart_drop_loop()
@@ -397,7 +407,10 @@ class SelfBot:
                 wait = _seconds_until(start_hour, start_minute)
                 if wait > 24 * 3600:
                     wait -= 24 * 3600
-                self.log("info", f"🌙 Pause nocturne prévue à {start_hour:02d}h{start_minute:02d} (dans {wait/3600:.1f}h)")
+                self.log(
+                    "info",
+                    f"🌙 Pause nocturne prévue à {start_hour:02d}h{start_minute:02d} (dans {wait / 3600:.1f}h)",
+                )
                 await asyncio.sleep(wait)
 
                 if self._cooldown_task and not self._cooldown_task.done():
@@ -407,7 +420,10 @@ class SelfBot:
 
                 duration = random.uniform(cfg["pause_duration_min"], cfg["pause_duration_max"])
                 resume_time = (datetime.now() + timedelta(seconds=duration)).strftime("%H:%M")
-                self.log("info", f"😴 Pause nocturne : {duration/3600:.1f}h — reprise vers {resume_time}")
+                self.log(
+                    "info",
+                    f"😴 Pause nocturne : {duration / 3600:.1f}h — reprise vers {resume_time}",
+                )
                 await asyncio.sleep(duration)
                 self.log("info", "☀️ Reprise après pause nocturne")
                 self._restart_drop_loop()
@@ -423,17 +439,19 @@ class SelfBot:
     ) -> None:
         """Persist a grab attempt — never let DB errors propagate into the bot."""
         try:
-            storage.record_grab(storage.GrabRecord(
-                bot_label=self.config.get("name", ""),
-                channel_id=channel_id,
-                card_name=card.get("name"),
-                series=card.get("series"),
-                rarity=str(card.get("rarity")) if card.get("rarity") is not None else None,
-                hearts=card.get("hearts"),
-                score=score_card(card, self.config),
-                success=success,
-                error_code=error_code,
-            ))
+            storage.record_grab(
+                storage.GrabRecord(
+                    bot_label=self.config.get("name", ""),
+                    channel_id=channel_id,
+                    card_name=card.get("name"),
+                    series=card.get("series"),
+                    rarity=str(card.get("rarity")) if card.get("rarity") is not None else None,
+                    hearts=card.get("hearts"),
+                    score=score_card(card, self.config),
+                    success=success,
+                    error_code=error_code,
+                )
+            )
         except Exception as e:
             self.log("warn", f"⚠️ DB grabs indisponible ({type(e).__name__}: {e})")
 
@@ -498,7 +516,10 @@ class SelfBot:
 
         self.log("info", "Cartes détectées :")
         for c in cards:
-            self.log("info", f"  [{c['index']+1}] {c['name']} • {c['series']} | G•{c['rarity']} | {c['hearts']}❤️")
+            self.log(
+                "info",
+                f"  [{c['index'] + 1}] {c['name']} • {c['series']} | G•{c['rarity']} | {c['hearts']}❤️",
+            )
 
         choose_card(cards, cfg, self.log)  # 1ère sélection
 
@@ -516,7 +537,8 @@ class SelfBot:
 
             all_buttons = list(iter_component_children(target_message.components))
             heart_buttons = [
-                b for b in all_buttons
+                b
+                for b in all_buttons
                 if hasattr(b, "label") and parse_button_hearts(b.label) is not None
             ]
 
@@ -533,12 +555,15 @@ class SelfBot:
 
         button_index = choose_card(cards, cfg, self.log)
         if button_index >= len(heart_buttons):
-            self.log("error", f"Bouton {button_index+1} introuvable ({len(heart_buttons)} bouton(s) détecté(s))")
+            self.log(
+                "error",
+                f"Bouton {button_index + 1} introuvable ({len(heart_buttons)} bouton(s) détecté(s))",
+            )
             return
 
         button = heart_buttons[button_index]
         if getattr(button, "disabled", False):
-            self.log("error", f"Bouton {button_index+1} encore désactivé")
+            self.log("error", f"Bouton {button_index + 1} encore désactivé")
             return
 
         delay = random.uniform(0, 5.5)
@@ -551,7 +576,7 @@ class SelfBot:
         try:
             await button.click()
             success = True
-            self.log("success", f"💖 Cliqué bouton {button_index+1} ({button.label}❤️)")
+            self.log("success", f"💖 Cliqué bouton {button_index + 1} ({button.label}❤️)")
         except discord.HTTPException as e:
             # Codes courants : 10008 message gone, 40060 interaction already acked,
             # 50001 missing access, 429 rate limit
