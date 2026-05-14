@@ -9,11 +9,13 @@ import sys
 import threading
 import tkinter as tk
 import uuid
+from datetime import datetime
 from pathlib import Path
 from tkinter import colorchooser, messagebox
 
 import customtkinter as ctk
 
+import storage
 import updater
 from bot_core import SelfBot, default_config, sanitize_config
 
@@ -659,14 +661,18 @@ class SelfbotManagerApp(ctk.CTk):
             text_color_disabled=T["text_dim"],
         )
         self.tabs.grid(row=2, column=0, sticky="nsew", padx=24, pady=(18, 24))
+        self.tabs.configure(command=self._on_tab_changed)
 
         self.tab_config   = self.tabs.add("  Configuration  ")
         self.tab_wishlist = self.tabs.add("  Wishlist  ")
         self.tab_logs     = self.tabs.add("  Logs  ")
+        self.tab_stats    = self.tabs.add("  Stats  ")
 
+        self._stats_refresh_after_id: str | None = None
         self._build_config_tab()
         self._build_wishlist_tab()
         self._build_logs_tab()
+        self._build_stats_tab()
         self._show_empty_state()
 
     # ---------- Config tab ----------
@@ -852,6 +858,219 @@ class SelfbotManagerApp(ctk.CTk):
         )
         tb.configure(yscrollcommand=sb.set, state="disabled")
         return tb, sb
+
+    # ---------- Stats tab ----------
+
+    def _build_stats_tab(self):
+        T = self.theme
+        wrap = ctk.CTkFrame(self.tab_stats, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=4, pady=10)
+
+        # Header
+        head = ctk.CTkFrame(wrap, fg_color="transparent")
+        head.pack(fill="x", pady=(0, 12))
+        ctk.CTkFrame(head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(
+            head, text="STATISTIQUES DES GRABS", text_color=T["accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left")
+        self._mk_button(
+            head, "↻  Refresh", command=self._refresh_stats,
+            variant="ghost", width=90,
+        ).pack(side="right")
+
+        # KPI row
+        self.stats_kpi_widgets: dict[str, ctk.CTkLabel] = {}
+        kpi_row = ctk.CTkFrame(wrap, fg_color="transparent")
+        kpi_row.pack(fill="x", pady=(0, 14))
+        for col, (key, title) in enumerate([
+            ("total",        "TOTAL GRABS"),
+            ("success_rate", "SUCCESS RATE"),
+            ("top_series",   "TOP 3 SÉRIES"),
+            ("top_rarities", "TOP 3 RARETÉS"),
+        ]):
+            kpi_row.grid_columnconfigure(col, weight=1, uniform="kpi")
+            card = ctk.CTkFrame(
+                kpi_row, fg_color=T["panel"], corner_radius=8,
+                border_color=T["border"], border_width=1,
+            )
+            card.grid(row=0, column=col, sticky="nsew", padx=4, pady=0)
+            ctk.CTkLabel(
+                card, text=title, text_color=T["text_dim"],
+                font=ctk.CTkFont(size=10, weight="bold"),
+            ).pack(anchor="w", padx=14, pady=(12, 2))
+            value = ctk.CTkLabel(
+                card, text="—", text_color=T["accent"],
+                font=ctk.CTkFont(size=22, weight="bold"),
+                justify="left", anchor="w",
+            )
+            value.pack(anchor="w", fill="x", padx=14, pady=(0, 14))
+            self.stats_kpi_widgets[key] = value
+
+        # Chart panel
+        chart_panel = ctk.CTkFrame(
+            wrap, fg_color=T["panel"], corner_radius=8,
+            border_color=T["border"], border_width=1,
+        )
+        chart_panel.pack(fill="both", expand=True, pady=(0, 0))
+
+        chart_head = ctk.CTkFrame(chart_panel, fg_color="transparent")
+        chart_head.pack(fill="x", padx=18, pady=(14, 6))
+        ctk.CTkFrame(chart_head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(
+            chart_head, text="GRABS / JOUR (14 DERNIERS JOURS)", text_color=T["accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left")
+
+        # Plain tk.Canvas — CustomTkinter has no chart widget. ~30 lines of
+        # bar-drawing keeps the bundle slim (no matplotlib in PyInstaller).
+        self.stats_canvas = tk.Canvas(
+            chart_panel, bg=T["panel"], highlightthickness=0, height=240,
+        )
+        self.stats_canvas.pack(fill="both", expand=True, padx=18, pady=(4, 16))
+        self.stats_canvas.bind("<Configure>", lambda _e: self._redraw_stats_chart())
+
+        # Cached so resizes / refreshes can redraw without re-querying SQLite.
+        self._stats_last: storage.Stats | None = None
+
+    def _on_tab_changed(self):
+        if not hasattr(self, "tabs"):
+            return
+        if self.tabs.get().strip() == "Stats":
+            self._refresh_stats()
+            self._schedule_stats_refresh()
+        elif self._stats_refresh_after_id is not None:
+            try:
+                self.after_cancel(self._stats_refresh_after_id)
+            except Exception:
+                pass
+            self._stats_refresh_after_id = None
+
+    def _schedule_stats_refresh(self):
+        if self._stats_refresh_after_id is not None:
+            try:
+                self.after_cancel(self._stats_refresh_after_id)
+            except Exception:
+                pass
+        self._stats_refresh_after_id = self.after(30_000, self._tick_stats_refresh)
+
+    def _tick_stats_refresh(self):
+        self._stats_refresh_after_id = None
+        if hasattr(self, "tabs") and self.tabs.get().strip() == "Stats":
+            self._refresh_stats()
+            self._schedule_stats_refresh()
+
+    def _refresh_stats(self):
+        try:
+            records = list(storage.iter_grabs())
+        except Exception as e:
+            self.stats_kpi_widgets["total"].configure(text="—")
+            self.stats_kpi_widgets["success_rate"].configure(text=f"DB error\n{type(e).__name__}")
+            self.stats_kpi_widgets["top_series"].configure(text="—")
+            self.stats_kpi_widgets["top_rarities"].configure(text="—")
+            self._stats_last = None
+            self._redraw_stats_chart()
+            return
+
+        stats = storage.compute_stats(records)
+        self._stats_last = stats
+
+        if stats.total == 0:
+            self.stats_kpi_widgets["total"].configure(text="0")
+            self.stats_kpi_widgets["success_rate"].configure(text="—")
+            self.stats_kpi_widgets["top_series"].configure(text="aucun grab\nenregistré")
+            self.stats_kpi_widgets["top_rarities"].configure(text="—")
+        else:
+            self.stats_kpi_widgets["total"].configure(text=f"{stats.total}")
+            self.stats_kpi_widgets["success_rate"].configure(
+                text=f"{stats.success_rate * 100:.0f}%"
+            )
+            self.stats_kpi_widgets["top_series"].configure(
+                text=self._format_top(stats.top_series),
+            )
+            self.stats_kpi_widgets["top_rarities"].configure(
+                text=self._format_top(stats.top_rarities),
+            )
+        self._redraw_stats_chart()
+
+    @staticmethod
+    def _format_top(items):
+        if not items:
+            return "—"
+        # Trim long series names so the KPI card stays compact.
+        return "\n".join(f"{(name[:18] + '…') if len(name) > 19 else name} · {n}"
+                         for name, n in items)
+
+    def _redraw_stats_chart(self):
+        if not hasattr(self, "stats_canvas"):
+            return
+        canvas = self.stats_canvas
+        canvas.delete("all")
+        T = self.theme
+
+        width = max(canvas.winfo_width(), 200)
+        height = max(canvas.winfo_height(), 80)
+
+        if self._stats_last is None or not self._stats_last.daily_counts:
+            canvas.create_text(
+                width / 2, height / 2,
+                text="aucune donnée",
+                fill=T["text_dim"],
+                font=("Segoe UI", 11),
+            )
+            return
+
+        daily = self._stats_last.daily_counts
+        max_count = max((c for _, c in daily), default=0)
+
+        pad_left, pad_right = 36, 16
+        pad_top, pad_bottom = 16, 28
+        plot_w = max(width - pad_left - pad_right, 50)
+        plot_h = max(height - pad_top - pad_bottom, 40)
+        n = len(daily)
+        gap = 6
+        bar_w = max((plot_w - gap * (n - 1)) / n, 4)
+
+        # Y-axis baseline
+        canvas.create_line(
+            pad_left, pad_top + plot_h,
+            pad_left + plot_w, pad_top + plot_h,
+            fill=T["border"],
+        )
+
+        if max_count == 0:
+            canvas.create_text(
+                pad_left + plot_w / 2, pad_top + plot_h / 2,
+                text="0 grab sur la fenêtre",
+                fill=T["text_dim"],
+                font=("Segoe UI", 11),
+            )
+            return
+
+        for i, (bucket_ts, count) in enumerate(daily):
+            x0 = pad_left + i * (bar_w + gap)
+            x1 = x0 + bar_w
+            bar_h = (count / max_count) * plot_h if max_count else 0
+            y0 = pad_top + plot_h - bar_h
+            y1 = pad_top + plot_h
+            color = T["accent"] if count else T["panel_hover"]
+            canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
+            if count:
+                canvas.create_text(
+                    (x0 + x1) / 2, y0 - 8,
+                    text=str(count),
+                    fill=T["text"],
+                    font=("Segoe UI", 9, "bold"),
+                )
+            # X-axis label every other day to avoid crowding.
+            if i % 2 == 0 or i == n - 1:
+                label = datetime.fromtimestamp(bucket_ts).strftime("%d/%m")
+                canvas.create_text(
+                    (x0 + x1) / 2, y1 + 12,
+                    text=label,
+                    fill=T["text_dim"],
+                    font=("Segoe UI", 9),
+                )
 
     # ---------- Empty / select state ----------
 
@@ -1389,6 +1608,13 @@ class SelfbotManagerApp(ctk.CTk):
                 pass
         self._persist()
         save_settings(self.settings)
+        # Don't let the auto-refresh fire post-destroy.
+        if self._stats_refresh_after_id is not None:
+            try:
+                self.after_cancel(self._stats_refresh_after_id)
+            except Exception:
+                pass
+            self._stats_refresh_after_id = None
         # Swallow further close clicks while shutdown is in flight.
         try:
             self.protocol("WM_DELETE_WINDOW", lambda: None)
