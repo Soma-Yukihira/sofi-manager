@@ -60,7 +60,9 @@ def parse_button_hearts(label):
     if label.endswith("k"):
         try:
             return int(float(label[:-1]) * 1000)
-        except ValueError:
+        except (ValueError, OverflowError):
+            # OverflowError covers 'infk' and the like — float() accepts 'inf'
+            # but int(inf) blows up.
             return None
     try:
         return int(label)
