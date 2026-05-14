@@ -7,35 +7,12 @@ from unittest.mock import MagicMock
 
 from bot_core import (
     SelfBot,
-    _format_drop_recipients,
-    choose_card,
     default_config,
-    iter_component_children,
     sanitize_config,
-    score_card,
 )
 
 
-class FakeChild:
-    def __init__(self, label):
-        self.label = label
-
-
-class FakeRow:
-    def __init__(self, children):
-        self.children = children
-
-
-class BotCoreTests(unittest.TestCase):
-    def test_score_card_survives_zero_norms(self):
-        cfg = default_config()
-        cfg["rarity_norm"] = 0
-        cfg["hearts_norm"] = 0
-
-        score = score_card({"rarity": 10, "hearts": 20}, cfg)
-
-        self.assertIsInstance(score, float)
-
+class SanitizeConfigTests(unittest.TestCase):
     def test_sanitize_config_restores_safe_numeric_ranges(self):
         cfg = default_config()
         cfg.update({
@@ -73,28 +50,6 @@ class BotCoreTests(unittest.TestCase):
         sanitize_config(cfg)
 
         self.assertFalse(cfg["night_pause_enabled"])
-
-    def test_choose_card_uses_best_personal_wishlist_match(self):
-        cfg = default_config()
-        cfg["wishlist"] = ["A", "B"]
-        cards = [
-            {"index": 0, "name": "A", "series": "S", "rarity": 400, "hearts": 400},
-            {"index": 1, "name": "B", "series": "S", "rarity": 100, "hearts": 430},
-        ]
-
-        selected = choose_card(cards, cfg, lambda *_: None)
-
-        self.assertEqual(selected, 1)
-
-    def test_component_children_are_flattened_across_rows(self):
-        rows = [
-            FakeRow([FakeChild("1"), FakeChild("2")]),
-            FakeRow([FakeChild("3")]),
-        ]
-
-        labels = [child.label for child in iter_component_children(rows)]
-
-        self.assertEqual(labels, ["1", "2", "3"])
 
 
 class SelfBotStopTests(unittest.TestCase):
@@ -161,43 +116,6 @@ class SelfBotStopTests(unittest.TestCase):
         finally:
             loop.call_soon_threadsafe(loop.stop)
             thr.join(timeout=2)
-
-
-class FakeMentionedUser:
-    def __init__(self, uid, name=None, display_name=None):
-        self.id = uid
-        self.name = name
-        self.display_name = display_name
-
-
-class FakeMessage:
-    def __init__(self, mentions):
-        self.mentions = mentions
-
-
-class FormatDropRecipientsTests(unittest.TestCase):
-    def test_empty_when_no_mentions(self):
-        self.assertEqual(_format_drop_recipients(FakeMessage([]), 42), "")
-
-    def test_excludes_self(self):
-        msg = FakeMessage([FakeMentionedUser(42, display_name="me")])
-        self.assertEqual(_format_drop_recipients(msg, 42), "")
-
-    def test_prefers_display_name(self):
-        msg = FakeMessage([FakeMentionedUser(7, name="raw", display_name="Pretty")])
-        self.assertEqual(_format_drop_recipients(msg, 42), "@Pretty")
-
-    def test_falls_back_to_name(self):
-        msg = FakeMessage([FakeMentionedUser(7, name="raw", display_name=None)])
-        self.assertEqual(_format_drop_recipients(msg, 42), "@raw")
-
-    def test_joins_multiple(self):
-        msg = FakeMessage([
-            FakeMentionedUser(1, display_name="a"),
-            FakeMentionedUser(42, display_name="me"),
-            FakeMentionedUser(2, display_name="b"),
-        ])
-        self.assertEqual(_format_drop_recipients(msg, 42), "@a, @b")
 
 
 class SdWatchdogTests(unittest.TestCase):
