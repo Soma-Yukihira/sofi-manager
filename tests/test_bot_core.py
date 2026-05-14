@@ -1,6 +1,11 @@
+import asyncio
+import threading
+import time
 import unittest
+from unittest.mock import MagicMock
 
 from bot_core import (
+    SelfBot,
     choose_card,
     default_config,
     iter_component_children,
@@ -88,6 +93,72 @@ class BotCoreTests(unittest.TestCase):
         labels = [child.label for child in iter_component_children(rows)]
 
         self.assertEqual(labels, ["1", "2", "3"])
+
+
+class SelfBotStopTests(unittest.TestCase):
+    """The GUI used to freeze ~10s on stop because stop() blocks the calling
+    thread up to 2*timeout seconds. These tests pin down the contract so
+    future changes can't silently regress that ceiling."""
+
+    def test_stop_is_noop_when_already_stopped(self):
+        bot = SelfBot(default_config())
+        # Fresh bot is already STATUS_STOPPED.
+        started = time.monotonic()
+        bot.stop()
+        self.assertLess(time.monotonic() - started, 0.1)
+
+    def test_stop_returns_immediately_without_loop(self):
+        bot = SelfBot(default_config())
+        bot.status = SelfBot.STATUS_RUNNING
+        # _loop / _client never got assigned (e.g. start crashed pre-loop).
+        started = time.monotonic()
+        bot.stop()
+        self.assertLess(time.monotonic() - started, 0.1)
+        self.assertEqual(bot.status, SelfBot.STATUS_STOPPED)
+
+    def test_stop_respects_timeout_when_close_hangs(self):
+        """If _client.close() never resolves, stop(timeout=1) must return
+        within ~timeout seconds, not block forever."""
+        bot = SelfBot(default_config())
+        bot.status = SelfBot.STATUS_RUNNING
+
+        loop_ready = threading.Event()
+        loop_box = {}
+
+        def run_loop():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop_box["loop"] = loop
+            loop_ready.set()
+            loop.run_forever()
+
+        thr = threading.Thread(target=run_loop, daemon=True)
+        thr.start()
+        loop_ready.wait()
+        loop = loop_box["loop"]
+
+        async def never_returns():
+            await asyncio.sleep(3600)
+
+        client = MagicMock()
+        client.close = never_returns
+
+        bot._loop = loop
+        bot._client = client
+        # No worker thread → join branch is skipped.
+
+        started = time.monotonic()
+        bot.stop(timeout=1)
+        elapsed = time.monotonic() - started
+
+        try:
+            self.assertLess(
+                elapsed, 2.0,
+                f"stop() blocked {elapsed:.2f}s with hanging close()"
+            )
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            thr.join(timeout=2)
 
 
 if __name__ == "__main__":

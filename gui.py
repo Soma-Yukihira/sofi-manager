@@ -578,15 +578,15 @@ class SelfbotManagerApp(ctk.CTk):
                 self._collect_form_into_config(self.selected_id)
             except Exception:
                 pass
-        for bot in self.bots.values():
-            if bot["instance"]:
-                bot["instance"].stop()
         self._persist()
         save_settings(self.settings)
-        ok, msg = updater.apply_and_restart()
-        if not ok:
-            # Pull failed - surface it instead of silently doing nothing.
-            messagebox.showerror("Mise a jour", msg)
+        def _do_restart():
+            ok, msg = updater.apply_and_restart()
+            if not ok:
+                # Pull failed - surface it instead of silently doing nothing.
+                messagebox.showerror("Mise a jour", msg)
+        # Stop bots off the Tk thread so the banner doesn't freeze before re-exec.
+        self._stop_all_async(then=_do_restart)
 
     def _build_main_panel(self):
         T = self.theme
@@ -1076,13 +1076,67 @@ class SelfbotManagerApp(ctk.CTk):
         self._refresh_action_buttons()
         self.tabs.set("  Logs  ")
 
+    def _stop_bot_async(self, instance, on_done=None):
+        """Run instance.stop() in a daemon thread to keep the Tk loop responsive.
+        on_done (if provided) is scheduled on the main thread once stop returns."""
+        def _worker():
+            try:
+                instance.stop()
+            except Exception:
+                pass
+            if on_done is not None:
+                try:
+                    self.after(0, on_done)
+                except Exception:
+                    pass
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _stop_all_async(self, then=None, max_wait=6.0):
+        """Stop every live bot in parallel. Fire `then` on the main thread once
+        all stops return, or after max_wait seconds — whichever comes first."""
+        instances = [b["instance"] for b in self.bots.values() if b["instance"]]
+        if not instances:
+            if then is not None:
+                self.after(0, then)
+            return
+        state = {"remaining": len(instances), "fired": False}
+        lock = threading.Lock()
+        def _fire():
+            if then is None or state["fired"]:
+                return
+            state["fired"] = True
+            try:
+                self.after(0, then)
+            except Exception:
+                pass
+        def _one(inst):
+            try:
+                inst.stop()
+            except Exception:
+                pass
+            with lock:
+                state["remaining"] -= 1
+                done = state["remaining"] == 0
+            if done:
+                _fire()
+        for inst in instances:
+            threading.Thread(target=_one, args=(inst,), daemon=True).start()
+        # Hard ceiling in case bot_core's own timeout is exceeded.
+        self.after(int(max_wait * 1000), _fire)
+
     def _stop_current(self):
         if not self.selected_id:
             return
         bot = self.bots[self.selected_id]
-        if bot["instance"]:
-            bot["instance"].stop()
-        self._refresh_action_buttons()
+        if not bot["instance"]:
+            return
+        self.stop_btn.configure(state="disabled", text="■ Arrêt…")
+        bid = self.selected_id
+        def _restore():
+            self.stop_btn.configure(text="■ Arrêter")
+            if self.selected_id == bid:
+                self._refresh_action_buttons()
+        self._stop_bot_async(bot["instance"], on_done=_restore)
 
     def _delete_current(self):
         if not self.selected_id:
@@ -1094,7 +1148,7 @@ class SelfbotManagerApp(ctk.CTk):
         ):
             return
         if bot["instance"]:
-            bot["instance"].stop()
+            self._stop_bot_async(bot["instance"])
         bot["entry"].destroy()
         del self.bots[self.selected_id]
         self.selected_id = None
@@ -1330,12 +1384,14 @@ class SelfbotManagerApp(ctk.CTk):
                 self._collect_form_into_config(self.selected_id)
             except Exception:
                 pass
-        for bot in self.bots.values():
-            if bot["instance"]:
-                bot["instance"].stop()
         self._persist()
         save_settings(self.settings)
-        self.after(200, self.destroy)
+        # Swallow further close clicks while shutdown is in flight.
+        try:
+            self.protocol("WM_DELETE_WINDOW", lambda: None)
+        except Exception:
+            pass
+        self._stop_all_async(then=self.destroy)
 
 
 def run():
