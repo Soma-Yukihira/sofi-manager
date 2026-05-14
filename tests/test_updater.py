@@ -64,6 +64,21 @@ class GitCommandHelpers(unittest.TestCase):
              patch.object(updater, "_git", return_value=_cp(stdout="2\n")):
             self.assertEqual(updater.ahead_count(), 2)
 
+    def test_behind_main_count_reads_rev_list_output(self):
+        with patch.object(updater, "is_git_clone", return_value=True), \
+             patch.object(updater, "_git", return_value=_cp(stdout="4\n")) as g:
+            self.assertEqual(updater.behind_main_count(), 4)
+            g.assert_called_with("rev-list", "--count", "main..origin/main")
+
+    def test_behind_main_count_returns_zero_on_git_failure(self):
+        with patch.object(updater, "is_git_clone", return_value=True), \
+             patch.object(updater, "_git", return_value=_cp(returncode=128, stdout="")):
+            self.assertEqual(updater.behind_main_count(), 0)
+
+    def test_behind_main_count_returns_zero_without_git_dir(self):
+        with patch.object(updater, "is_git_clone", return_value=False):
+            self.assertEqual(updater.behind_main_count(), 0)
+
     def test_has_local_changes_true_when_porcelain_nonempty(self):
         with patch.object(updater, "is_git_clone", return_value=True), \
              patch.object(updater, "_git", return_value=_cp(stdout=" M file.py\n")):
@@ -280,43 +295,55 @@ class FetchAndStatus(unittest.TestCase):
              patch.object(updater, "_fetch", return_value=False):
             self.assertEqual(updater.fetch_and_status(), {"state": "fetch_failed", "behind": 0})
 
-    def test_wrong_branch(self):
+    def test_available_on_feature_branch_ignores_local_branch(self):
+        # Dev working on a feature branch still wants to know when main moved.
+        # dirty/ahead gates do not apply because the user is not on main and
+        # therefore cannot trigger the inline fast-forward anyway.
         with patch.object(updater, "is_git_clone", return_value=True), \
              patch.object(updater, "_fetch", return_value=True), \
-             patch.object(updater, "current_branch", return_value="feat/x"):
-            self.assertEqual(updater.fetch_and_status(), {"state": "wrong_branch", "behind": 0})
+             patch.object(updater, "current_branch", return_value="feat/x"), \
+             patch.object(updater, "has_local_changes", return_value=True), \
+             patch.object(updater, "ahead_count", return_value=3), \
+             patch.object(updater, "behind_main_count", return_value=4):
+            self.assertEqual(updater.fetch_and_status(), {"state": "available", "behind": 4})
+
+    def test_uptodate_on_feature_branch(self):
+        with patch.object(updater, "is_git_clone", return_value=True), \
+             patch.object(updater, "_fetch", return_value=True), \
+             patch.object(updater, "current_branch", return_value="feat/x"), \
+             patch.object(updater, "behind_main_count", return_value=0):
+            self.assertEqual(updater.fetch_and_status(), {"state": "uptodate", "behind": 0})
 
     def test_dirty(self):
         with patch.object(updater, "is_git_clone", return_value=True), \
              patch.object(updater, "_fetch", return_value=True), \
+             patch.object(updater, "behind_main_count", return_value=2), \
              patch.object(updater, "current_branch", return_value="main"), \
              patch.object(updater, "has_local_changes", return_value=True):
-            self.assertEqual(updater.fetch_and_status(), {"state": "dirty", "behind": 0})
+            self.assertEqual(updater.fetch_and_status(), {"state": "dirty", "behind": 2})
 
     def test_ahead(self):
         with patch.object(updater, "is_git_clone", return_value=True), \
              patch.object(updater, "_fetch", return_value=True), \
+             patch.object(updater, "behind_main_count", return_value=2), \
              patch.object(updater, "current_branch", return_value="main"), \
              patch.object(updater, "has_local_changes", return_value=False), \
              patch.object(updater, "ahead_count", return_value=1):
-            self.assertEqual(updater.fetch_and_status(), {"state": "ahead", "behind": 0})
+            self.assertEqual(updater.fetch_and_status(), {"state": "ahead", "behind": 2})
 
     def test_uptodate(self):
         with patch.object(updater, "is_git_clone", return_value=True), \
              patch.object(updater, "_fetch", return_value=True), \
-             patch.object(updater, "current_branch", return_value="main"), \
-             patch.object(updater, "has_local_changes", return_value=False), \
-             patch.object(updater, "ahead_count", return_value=0), \
-             patch.object(updater, "behind_count", return_value=0):
+             patch.object(updater, "behind_main_count", return_value=0):
             self.assertEqual(updater.fetch_and_status(), {"state": "uptodate", "behind": 0})
 
     def test_available(self):
         with patch.object(updater, "is_git_clone", return_value=True), \
              patch.object(updater, "_fetch", return_value=True), \
+             patch.object(updater, "behind_main_count", return_value=5), \
              patch.object(updater, "current_branch", return_value="main"), \
              patch.object(updater, "has_local_changes", return_value=False), \
-             patch.object(updater, "ahead_count", return_value=0), \
-             patch.object(updater, "behind_count", return_value=5):
+             patch.object(updater, "ahead_count", return_value=0):
             self.assertEqual(updater.fetch_and_status(), {"state": "available", "behind": 5})
 
 
