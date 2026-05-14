@@ -7,16 +7,15 @@ Thèmes : preset dark (black & gold), preset light (white & gold), couleurs pers
 import json
 import sys
 import threading
-import uuid
 import tkinter as tk
-from tkinter import messagebox, colorchooser
+import uuid
 from pathlib import Path
+from tkinter import colorchooser, messagebox
 
 import customtkinter as ctk
 
-from bot_core import SelfBot, default_config, sanitize_config
 import updater
-
+from bot_core import SelfBot, default_config, sanitize_config
 
 # =============================================
 # PyInstaller-safe paths
@@ -138,7 +137,7 @@ def load_bots():
     if not CONFIG_PATH.exists():
         return []
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
             return json.load(f).get("bots", [])
     except Exception as e:
         print(f"⚠ Impossible de charger {CONFIG_PATH}: {e}")
@@ -153,7 +152,7 @@ def load_settings():
     if not SETTINGS_PATH.exists():
         return {"theme": {"mode": "dark", "overrides": {}}}
     try:
-        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+        with open(SETTINGS_PATH, encoding="utf-8") as f:
             data = json.load(f)
         data.setdefault("theme", {"mode": "dark", "overrides": {}})
         data["theme"].setdefault("mode", "dark")
@@ -365,10 +364,14 @@ class SelfbotManagerApp(ctk.CTk):
 
     def _mk_button(self, parent, text, command=None, variant="default", width=100):
         T = self.theme
-        base = dict(
-            text=text, command=command, width=width, height=32,
-            corner_radius=4, font=ctk.CTkFont(size=12, weight="bold"),
-        )
+        base = {
+            "text": text,
+            "command": command,
+            "width": width,
+            "height": 32,
+            "corner_radius": 4,
+            "font": ctk.CTkFont(size=12, weight="bold"),
+        }
         if variant == "primary":
             return ctk.CTkButton(
                 parent, **base,
@@ -1352,7 +1355,7 @@ class SelfbotManagerApp(ctk.CTk):
 
         # Détacher les status_callbacks (seront rebranchés dans _register_bot)
         saved_bots = []  # [(cfg, log_buffer, instance), ...]
-        for bot_id, bot in self.bots.items():
+        for _bot_id, bot in self.bots.items():
             if bot["instance"]:
                 bot["instance"].status_callback = None
             saved_bots.append((bot["config"], bot["log_buffer"], bot["instance"]))

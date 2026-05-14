@@ -1,0 +1,46 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["env", "build", "dist", "assets"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "PIE", # flake8-pie
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",   # line-too-long — formatter handles long lines pragmatically
+    "SIM105", # try/except/pass is fine, contextlib.suppress is slower and less obvious
+    "SIM102", # nested if can be clearer than a long boolean
+    "SIM108", # if/else → ternary often hurts readability
+    "RUF001", # en-dashes / curly quotes in French UI strings are intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]    # asserts inside tests are fine
+"main.py" = ["E402"]     # pre-import update hook must run before gui import
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+files = ["bot_core.py", "cli.py", "gui.py", "main.py", "updater.py", "tools"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Permissive baseline — the refactor/mypy-strict branch tightens this.
+check_untyped_defs = false
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

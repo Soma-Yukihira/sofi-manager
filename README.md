@@ -10,6 +10,7 @@
 <p><i>Premium black &amp; gold GUI to orchestrate multiple Discord SOFI selfbots in parallel.</i></p>
 
 <p>
+  <a href="https://github.com/Soma-Yukihira/sofi-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Soma-Yukihira/sofi-manager/ci.yml?branch=main&style=flat-square&labelColor=0a0a0a&color=d4af37&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-d4af37?style=flat-square&labelColor=0a0a0a" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/license-MIT-d4af37?style=flat-square&labelColor=0a0a0a" alt="MIT License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-d4af37?style=flat-square&labelColor=0a0a0a" alt="Cross-platform">
