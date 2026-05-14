@@ -22,7 +22,9 @@ import signal
 import sys
 import time
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 # Allow `cli.py` to be run from anywhere
 _HERE = Path(__file__).resolve().parent
@@ -66,7 +68,7 @@ LEVEL_COLOR = {
 }
 
 
-def _enable_windows_vt():
+def _enable_windows_vt() -> None:
     """Enable VT100 ANSI sequences on legacy Windows consoles."""
     if os.name != "nt":
         return
@@ -80,13 +82,13 @@ def _enable_windows_vt():
         pass
 
 
-def _strip_colors():
+def _strip_colors() -> None:
     for attr in dir(Color):
         if not attr.startswith("_") and attr.isupper():
             setattr(Color, attr, "")
 
 
-def cprint(text: str = "", end: str = "\n"):
+def cprint(text: str = "", end: str = "\n") -> None:
     print(text, end=end, flush=True)
 
 
@@ -94,7 +96,7 @@ def cprint(text: str = "", end: str = "\n"):
 # Storage
 # =============================================
 
-def load_bots() -> list[dict]:
+def load_bots() -> list[dict[str, Any]]:
     if not CONFIG_PATH.exists():
         return []
     try:
@@ -105,7 +107,7 @@ def load_bots() -> list[dict]:
         return []
 
 
-def save_bots(bots: list[dict]):
+def save_bots(bots: list[dict[str, Any]]) -> None:
     tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
     tmp.write_text(
         json.dumps({"bots": bots}, indent=2, ensure_ascii=False) + "\n",
@@ -114,7 +116,7 @@ def save_bots(bots: list[dict]):
     tmp.replace(CONFIG_PATH)
 
 
-def find_bot(bots, name_or_id: str):
+def find_bot(bots: list[dict[str, Any]], name_or_id: str) -> dict[str, Any] | None:
     nl = name_or_id.lower()
     for b in bots:
         if b.get("_id") == name_or_id or (b.get("name") or "").lower() == nl:
@@ -122,7 +124,7 @@ def find_bot(bots, name_or_id: str):
     return None
 
 
-def header(title: str):
+def header(title: str) -> None:
     cprint()
     cprint(f"{Color.GOLD}⚜  {Color.BOLD}{title}{Color.RESET}")
     cprint(f"{Color.DIMGRAY}{'-' * 60}{Color.RESET}")
@@ -132,7 +134,7 @@ def header(title: str):
 # Commands
 # =============================================
 
-def cmd_list(args):
+def cmd_list(args: argparse.Namespace) -> int:
     bots = load_bots()
     header(f"Configured bots  ({len(bots)})")
     if not bots:
@@ -157,7 +159,7 @@ def cmd_list(args):
     return 0
 
 
-def cmd_show(args):
+def cmd_show(args: argparse.Namespace) -> int:
     bots = load_bots()
     bot = find_bot(bots, args.name)
     if not bot:
@@ -206,7 +208,7 @@ def _ask_list(prompt: str) -> list[int]:
             cprint(f"  {Color.YELLOW}skipping (not an int){Color.RESET}")
 
 
-def cmd_add(args):
+def cmd_add(args: argparse.Namespace) -> int:
     header("New bot wizard")
     cprint(f"{Color.DIMGRAY}Press Ctrl+C to cancel.{Color.RESET}\n")
 
@@ -241,7 +243,7 @@ def cmd_add(args):
     return 0
 
 
-def cmd_rm(args):
+def cmd_rm(args: argparse.Namespace) -> int:
     bots = load_bots()
     bot = find_bot(bots, args.name)
     if not bot:
@@ -260,7 +262,7 @@ def cmd_rm(args):
     return 0
 
 
-def cmd_run(args):
+def cmd_run(args: argparse.Namespace) -> int:
     bots_cfg = load_bots()
     if not bots_cfg:
         cprint(f"{Color.RED}No bots configured. Run `python cli.py add` first.{Color.RESET}")
@@ -281,7 +283,7 @@ def cmd_run(args):
     name_pad = max((len(b.get("name") or "") for b in selected), default=8)
     name_pad = min(max(name_pad, 8), 18)
 
-    def _on_status(bot, status):
+    def _on_status(bot: SelfBot, status: str) -> None:
         tag = {
             "running":  f"{Color.GREEN}● running{Color.RESET}",
             "starting": f"{Color.YELLOW}● connecting{Color.RESET}",
@@ -302,7 +304,7 @@ def cmd_run(args):
 
     stop_requested = {"v": False}
 
-    def _signal_handler(*_):
+    def _signal_handler(*_: Any) -> None:
         stop_requested["v"] = True
     try:
         signal.signal(signal.SIGINT, _signal_handler)
@@ -366,7 +368,7 @@ def cmd_run(args):
 # Argparse plumbing
 # =============================================
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="cli.py",
         description="Selfbot Manager · headless interface (VPS-friendly).",
@@ -394,12 +396,12 @@ def build_parser():
     return p
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
     # Force UTF-8 stdout so glyphs like ⚜ render on Windows (cp1252 default)
     # and don't crash when output is piped or redirected to a file.
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
         except Exception:
             pass
 

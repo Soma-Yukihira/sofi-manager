@@ -4,14 +4,18 @@ Interface premium pour gérer plusieurs selfbots.
 Thèmes : preset dark (black & gold), preset light (white & gold), couleurs personnalisables.
 """
 
+from __future__ import annotations
+
 import json
 import sys
 import threading
 import tkinter as tk
 import uuid
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 from tkinter import colorchooser, messagebox
+from typing import Any
 
 import customtkinter as ctk
 
@@ -127,7 +131,7 @@ CONFIG_PATH   = USER_DIR / "bots.json"
 SETTINGS_PATH = USER_DIR / "settings.json"
 
 
-def write_json_atomic(path: Path, data: dict):
+def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -135,7 +139,7 @@ def write_json_atomic(path: Path, data: dict):
     tmp.replace(path)
 
 
-def load_bots():
+def load_bots() -> list[dict[str, Any]]:
     if not CONFIG_PATH.exists():
         return []
     try:
@@ -146,11 +150,11 @@ def load_bots():
         return []
 
 
-def save_bots(bots):
+def save_bots(bots: list[dict[str, Any]]) -> None:
     write_json_atomic(CONFIG_PATH, {"bots": bots})
 
 
-def load_settings():
+def load_settings() -> dict[str, Any]:
     if not SETTINGS_PATH.exists():
         return {"theme": {"mode": "dark", "overrides": {}}}
     try:
@@ -164,14 +168,14 @@ def load_settings():
         return {"theme": {"mode": "dark", "overrides": {}}}
 
 
-def save_settings(settings):
+def save_settings(settings: dict[str, Any]) -> None:
     write_json_atomic(SETTINGS_PATH, settings)
 
 
-def dedupe_sort(items):
+def dedupe_sort(items: Iterable[str]) -> list[str]:
     """Trie alphabétiquement + dédoublonne (insensible à la casse).
     Garde la première casse rencontrée pour les doublons."""
-    seen = {}
+    seen: dict[str, str] = {}
     for item in items:
         if not item:
             continue
@@ -184,7 +188,7 @@ def dedupe_sort(items):
     return sorted(seen.values(), key=str.casefold)
 
 
-def contrast_text(hex_color):
+def contrast_text(hex_color: str) -> str:
     """Retourne #000 ou #fff selon la luminance."""
     try:
         h = hex_color.lstrip("#")
@@ -196,17 +200,17 @@ def contrast_text(hex_color):
 
 
 class Theme:
-    def __init__(self, mode="dark", overrides=None):
+    def __init__(self, mode: str = "dark", overrides: dict[str, str] | None = None):
         self.mode = mode if mode in PRESETS else "dark"
         self.overrides = dict(overrides or {})
 
     @property
-    def colors(self):
+    def colors(self) -> dict[str, str]:
         d = dict(PRESETS[self.mode])
         d.update(self.overrides)
         return d
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> str:
         return self.colors[key]
 
 
@@ -215,7 +219,13 @@ class Theme:
 # =============================================
 
 class BotListEntry(ctk.CTkFrame):
-    def __init__(self, master, theme, bot_id, on_click):
+    def __init__(
+        self,
+        master: Any,
+        theme: Theme,
+        bot_id: str,
+        on_click: Callable[[str], None],
+    ):
         super().__init__(master, fg_color=theme["panel"], corner_radius=6, height=52)
         self.theme = theme
         self.bot_id = bot_id
@@ -240,28 +250,29 @@ class BotListEntry(ctk.CTkFrame):
             w.bind("<Enter>", self._enter)
             w.bind("<Leave>", self._leave)
 
-    def _click(self, _e): self.on_click(self.bot_id)
+    def _click(self, _e: Any) -> None:
+        self.on_click(self.bot_id)
 
-    def _enter(self, _e):
+    def _enter(self, _e: Any) -> None:
         if not self.selected:
             self._set_bg(self.theme["panel_hover"])
 
-    def _leave(self, _e):
+    def _leave(self, _e: Any) -> None:
         if not self.selected:
             self._set_bg(self.theme["panel"])
 
-    def _set_bg(self, color):
+    def _set_bg(self, color: str) -> None:
         self.configure(fg_color=color)
         self.dot.configure(bg=color)
 
-    def set_selected(self, selected):
+    def set_selected(self, selected: bool) -> None:
         self.selected = selected
         self._set_bg(self.theme["panel_selected"] if selected else self.theme["panel"])
 
-    def set_name(self, name):
+    def set_name(self, name: str) -> None:
         self.label.configure(text=name or "(sans nom)")
 
-    def set_status(self, status):
+    def set_status(self, status: str) -> None:
         colors = {
             "running":  self.theme["success"],
             "starting": self.theme["warn"],
@@ -278,7 +289,7 @@ class BotListEntry(ctk.CTkFrame):
 
 class SelfbotManagerApp(ctk.CTk):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.settings = load_settings()
         self.theme = Theme(
@@ -308,9 +319,9 @@ class SelfbotManagerApp(ctk.CTk):
                 pass
 
         # bot_id -> {"config", "instance", "entry", "log_widget", "log_scroll", "log_buffer"}
-        self.bots: dict = {}
+        self.bots: dict[str, dict[str, Any]] = {}
         self.selected_id: str | None = None
-        self.cfg_widgets: dict = {}
+        self.cfg_widgets: dict[str, Any] = {}
 
         self._apply_appearance()
         self._build_layout()
@@ -327,20 +338,22 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- thème ----------
 
-    def _apply_appearance(self):
+    def _apply_appearance(self) -> None:
         ctk.set_appearance_mode("light" if self.theme.mode == "light" else "dark")
         self.configure(fg_color=self.theme["bg"])
 
     # ---------- helpers UI ----------
 
-    def _mk_label(self, parent, text, dim=False, size=12, bold=False):
+    def _mk_label(
+        self, parent: Any, text: str, dim: bool = False, size: int = 12, bold: bool = False
+    ) -> ctk.CTkLabel:
         return ctk.CTkLabel(
             parent, text=text,
             text_color=self.theme["text_dim"] if dim else self.theme["text"],
             font=ctk.CTkFont(size=size, weight="bold" if bold else "normal"),
         )
 
-    def _mk_entry(self, parent, show=None, placeholder=""):
+    def _mk_entry(self, parent: Any, show: str | None = None, placeholder: str = "") -> ctk.CTkEntry:
         return ctk.CTkEntry(
             parent,
             fg_color=self.theme["input_bg"],
@@ -353,7 +366,7 @@ class SelfbotManagerApp(ctk.CTk):
             height=32,
         )
 
-    def _mk_textbox(self, parent, height=120):
+    def _mk_textbox(self, parent: Any, height: int = 120) -> ctk.CTkTextbox:
         return ctk.CTkTextbox(
             parent,
             fg_color=self.theme["input_bg"],
@@ -364,7 +377,14 @@ class SelfbotManagerApp(ctk.CTk):
             font=ctk.CTkFont(family="Consolas", size=12),
         )
 
-    def _mk_button(self, parent, text, command=None, variant="default", width=100):
+    def _mk_button(
+        self,
+        parent: Any,
+        text: str,
+        command: Callable[[], None] | None = None,
+        variant: str = "default",
+        width: int = 100,
+    ) -> ctk.CTkButton:
         T = self.theme
         base = {
             "text": text,
@@ -398,7 +418,7 @@ class SelfbotManagerApp(ctk.CTk):
             text_color=T["accent"], border_color=T["accent_dim"], border_width=1,
         )
 
-    def _mk_section(self, parent, title):
+    def _mk_section(self, parent: Any, title: str) -> ctk.CTkFrame:
         T = self.theme
         wrap = ctk.CTkFrame(parent, fg_color=T["panel"],
                               corner_radius=8, border_color=T["border"], border_width=1)
@@ -418,7 +438,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Layout ----------
 
-    def _build_layout(self):
+    def _build_layout(self) -> None:
         self.grid_columnconfigure(0, weight=0, minsize=270)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -426,7 +446,7 @@ class SelfbotManagerApp(ctk.CTk):
         self._build_sidebar()
         self._build_main_panel()
 
-    def _build_sidebar(self):
+    def _build_sidebar(self) -> None:
         T = self.theme
         side = ctk.CTkFrame(self, fg_color=T["panel"], corner_radius=0)
         side.grid(row=0, column=0, sticky="nsew")
@@ -462,7 +482,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Update banner ----------
 
-    def _build_update_banner(self, parent):
+    def _build_update_banner(self, parent: Any) -> None:
         """
         Gold strip above the top bar, hidden until the updater finds new
         commits on origin/main. The frame is gridded but immediately
@@ -509,7 +529,7 @@ class SelfbotManagerApp(ctk.CTk):
 
         self.update_banner.grid_remove()
 
-    def _show_update_banner(self, behind: int):
+    def _show_update_banner(self, behind: int) -> None:
         msg = (
             f"  Mise a jour disponible  -  {behind} commit"
             f"{'s' if behind > 1 else ''} en attente. Redemarrez pour appliquer."
@@ -520,7 +540,7 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
-    def _check_updates_now(self):
+    def _check_updates_now(self) -> None:
         """Manual update check - same fetch as the background poller, but
         always gives feedback (banner if behind, messagebox otherwise)."""
         btn = getattr(self, "check_updates_btn", None)
@@ -530,7 +550,7 @@ class SelfbotManagerApp(ctk.CTk):
             except Exception:
                 pass
 
-        def _worker():
+        def _worker() -> None:
             try:
                 result = updater.fetch_and_status()
             except Exception as e:
@@ -539,7 +559,7 @@ class SelfbotManagerApp(ctk.CTk):
 
         threading.Thread(target=_worker, name="updater-manual", daemon=True).start()
 
-    def _on_check_updates_result(self, result: dict):
+    def _on_check_updates_result(self, result: dict[str, Any]) -> None:
         btn = getattr(self, "check_updates_btn", None)
         if btn is not None:
             try:
@@ -569,13 +589,13 @@ class SelfbotManagerApp(ctk.CTk):
         else:
             messagebox.showwarning(title, msg)
 
-    def _dismiss_update_banner(self):
+    def _dismiss_update_banner(self) -> None:
         try:
             self.update_banner.grid_remove()
         except Exception:
             pass
 
-    def _on_update_restart(self):
+    def _on_update_restart(self) -> None:
         # Persist current form/state before re-execing, just like _on_close.
         if self.selected_id:
             try:
@@ -584,7 +604,7 @@ class SelfbotManagerApp(ctk.CTk):
                 pass
         self._persist()
         save_settings(self.settings)
-        def _do_restart():
+        def _do_restart() -> None:
             ok, msg = updater.apply_and_restart()
             if not ok:
                 # Pull failed - surface it instead of silently doing nothing.
@@ -592,7 +612,7 @@ class SelfbotManagerApp(ctk.CTk):
         # Stop bots off the Tk thread so the banner doesn't freeze before re-exec.
         self._stop_all_async(then=_do_restart)
 
-    def _build_main_panel(self):
+    def _build_main_panel(self) -> None:
         T = self.theme
         main = ctk.CTkFrame(self, fg_color=T["bg"], corner_radius=0)
         main.grid(row=0, column=1, sticky="nsew")
@@ -676,7 +696,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Config tab ----------
 
-    def _build_config_tab(self):
+    def _build_config_tab(self) -> None:
         T = self.theme
         scroll = ctk.CTkScrollableFrame(
             self.tab_config, fg_color="transparent",
@@ -749,7 +769,15 @@ class SelfbotManagerApp(ctk.CTk):
         self._add_field_grid(row, 2, "wishlist_override_threshold",
                               "Seuil override wishlist", numeric=True)
 
-    def _add_field(self, parent, key, label, placeholder="", show=None, numeric=False):
+    def _add_field(
+        self,
+        parent: Any,
+        key: str,
+        label: str,
+        placeholder: str = "",
+        show: str | None = None,
+        numeric: bool = False,
+    ) -> None:
         wrap = ctk.CTkFrame(parent, fg_color="transparent")
         wrap.pack(fill="x", pady=4)
         self._mk_label(wrap, label, dim=True, size=11).pack(anchor="w", pady=(0, 4))
@@ -758,7 +786,9 @@ class SelfbotManagerApp(ctk.CTk):
         e._numeric = numeric
         self.cfg_widgets[key] = e
 
-    def _add_field_grid(self, parent, col, key, label, numeric=False):
+    def _add_field_grid(
+        self, parent: Any, col: int, key: str, label: str, numeric: bool = False
+    ) -> None:
         wrap = ctk.CTkFrame(parent, fg_color="transparent")
         wrap.grid(row=0, column=col, padx=(0 if col == 0 else 8, 0), sticky="ew")
         self._mk_label(wrap, label, dim=True, size=11).pack(anchor="w", pady=(0, 4))
@@ -767,7 +797,7 @@ class SelfbotManagerApp(ctk.CTk):
         e._numeric = numeric
         self.cfg_widgets[key] = e
 
-    def _add_textarea(self, parent, key, label, height=120):
+    def _add_textarea(self, parent: Any, key: str, label: str, height: int = 120) -> None:
         wrap = ctk.CTkFrame(parent, fg_color="transparent")
         wrap.pack(fill="x", pady=4)
         self._mk_label(wrap, label, dim=True, size=11).pack(anchor="w", pady=(0, 4))
@@ -777,7 +807,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Wishlist tab ----------
 
-    def _build_wishlist_tab(self):
+    def _build_wishlist_tab(self) -> None:
         T = self.theme
         wrap = ctk.CTkFrame(self.tab_wishlist, fg_color="transparent")
         wrap.pack(fill="both", expand=True, padx=4, pady=10)
@@ -807,7 +837,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Logs tab ----------
 
-    def _build_logs_tab(self):
+    def _build_logs_tab(self) -> None:
         T = self.theme
         self.logs_container = ctk.CTkFrame(
             self.tab_logs, fg_color=T["panel"],
@@ -834,7 +864,7 @@ class SelfbotManagerApp(ctk.CTk):
         )
         self.logs_placeholder.pack(expand=True)
 
-    def _make_log_widget(self):
+    def _make_log_widget(self) -> tuple[tk.Text, ctk.CTkScrollbar]:
         T = self.theme
         tb = tk.Text(
             self.logs_holder,
@@ -860,7 +890,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Stats tab ----------
 
-    def _build_stats_tab(self):
+    def _build_stats_tab(self) -> None:
         T = self.theme
         wrap = ctk.CTkFrame(self.tab_stats, fg_color="transparent")
         wrap.pack(fill="both", expand=True, padx=4, pady=10)
@@ -932,7 +962,7 @@ class SelfbotManagerApp(ctk.CTk):
         # Cached so resizes / refreshes can redraw without re-querying SQLite.
         self._stats_last: storage.Stats | None = None
 
-    def _on_tab_changed(self):
+    def _on_tab_changed(self) -> None:
         if not hasattr(self, "tabs"):
             return
         if self.tabs.get().strip() == "Stats":
@@ -945,7 +975,7 @@ class SelfbotManagerApp(ctk.CTk):
                 pass
             self._stats_refresh_after_id = None
 
-    def _schedule_stats_refresh(self):
+    def _schedule_stats_refresh(self) -> None:
         if self._stats_refresh_after_id is not None:
             try:
                 self.after_cancel(self._stats_refresh_after_id)
@@ -953,13 +983,13 @@ class SelfbotManagerApp(ctk.CTk):
                 pass
         self._stats_refresh_after_id = self.after(30_000, self._tick_stats_refresh)
 
-    def _tick_stats_refresh(self):
+    def _tick_stats_refresh(self) -> None:
         self._stats_refresh_after_id = None
         if hasattr(self, "tabs") and self.tabs.get().strip() == "Stats":
             self._refresh_stats()
             self._schedule_stats_refresh()
 
-    def _refresh_stats(self):
+    def _refresh_stats(self) -> None:
         try:
             records = list(storage.iter_grabs())
         except Exception as e:
@@ -993,14 +1023,14 @@ class SelfbotManagerApp(ctk.CTk):
         self._redraw_stats_chart()
 
     @staticmethod
-    def _format_top(items):
+    def _format_top(items: list[tuple[str, int]]) -> str:
         if not items:
             return "—"
         # Trim long series names so the KPI card stays compact.
         return "\n".join(f"{(name[:18] + '…') if len(name) > 19 else name} · {n}"
                          for name, n in items)
 
-    def _redraw_stats_chart(self):
+    def _redraw_stats_chart(self) -> None:
         if not hasattr(self, "stats_canvas"):
             return
         canvas = self.stats_canvas
@@ -1073,14 +1103,14 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Empty / select state ----------
 
-    def _show_empty_state(self):
+    def _show_empty_state(self) -> None:
         self.status_label.configure(text="—  Aucun bot sélectionné",
                                        text_color=self.theme["text_dim"])
         self.status_dot.itemconfig(self.status_dot_id, fill=self.theme["dot_off"])
         for btn in (self.start_btn, self.stop_btn, self.delete_btn, self.save_btn):
             btn.configure(state="disabled")
 
-    def _refresh_action_buttons(self):
+    def _refresh_action_buttons(self) -> None:
         if not self.selected_id:
             self._show_empty_state()
             return
@@ -1095,7 +1125,7 @@ class SelfbotManagerApp(ctk.CTk):
         status = instance.status if instance else "stopped"
         self._update_status_header(status)
 
-    def _update_status_header(self, status):
+    def _update_status_header(self, status: str) -> None:
         T = self.theme
         labels = {
             "running":  ("●  EN MARCHE",  T["success"]),
@@ -1113,7 +1143,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Bot list & selection ----------
 
-    def _load_existing_bots(self):
+    def _load_existing_bots(self) -> None:
         for cfg in load_bots():
             # tri à l'import
             sanitize_config(cfg)
@@ -1121,7 +1151,12 @@ class SelfbotManagerApp(ctk.CTk):
             cfg["wishlist_series"] = dedupe_sort(cfg.get("wishlist_series", []))
             self._register_bot(cfg)
 
-    def _register_bot(self, cfg, log_buffer=None, instance=None):
+    def _register_bot(
+        self,
+        cfg: dict[str, Any],
+        log_buffer: list[tuple[str, str]] | None = None,
+        instance: SelfBot | None = None,
+    ) -> str:
         bot_id = cfg.get("_id") or str(uuid.uuid4())
         cfg["_id"] = bot_id
 
@@ -1143,13 +1178,13 @@ class SelfbotManagerApp(ctk.CTk):
         }
         return bot_id
 
-    def _add_bot(self):
+    def _add_bot(self) -> None:
         cfg = default_config()
         bot_id = self._register_bot(cfg)
         self._select_bot(bot_id)
         self._persist()
 
-    def _select_bot(self, bot_id):
+    def _select_bot(self, bot_id: str) -> None:
         if self.selected_id and self.selected_id in self.bots:
             self._collect_form_into_config(self.selected_id)
             self.bots[self.selected_id]["entry"].set_selected(False)
@@ -1162,7 +1197,7 @@ class SelfbotManagerApp(ctk.CTk):
         self._switch_log_widget(bot_id)
         self._refresh_action_buttons()
 
-    def _switch_log_widget(self, bot_id):
+    def _switch_log_widget(self, bot_id: str) -> None:
         for child in self.logs_holder.winfo_children():
             child.pack_forget()
 
@@ -1182,7 +1217,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Form <-> config ----------
 
-    def _populate_form(self, cfg):
+    def _populate_form(self, cfg: dict[str, Any]) -> None:
         for key, w in self.cfg_widgets.items():
             value = cfg.get(key, "")
             if isinstance(w, ctk.CTkSwitch):
@@ -1210,7 +1245,7 @@ class SelfbotManagerApp(ctk.CTk):
         self.wishlist_series.delete("1.0", "end")
         self.wishlist_series.insert("1.0", "\n".join(cfg.get("wishlist_series", [])))
 
-    def _collect_form_into_config(self, bot_id):
+    def _collect_form_into_config(self, bot_id: str) -> None:
         cfg = self.bots[bot_id]["config"]
         for key, w in self.cfg_widgets.items():
             if isinstance(w, ctk.CTkSwitch):
@@ -1255,7 +1290,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Actions ----------
 
-    def _save_current(self):
+    def _save_current(self) -> None:
         if not self.selected_id:
             return
         self._collect_form_into_config(self.selected_id)
@@ -1274,10 +1309,10 @@ class SelfbotManagerApp(ctk.CTk):
         self._append_log_line(self.selected_id, "system",
                                 "Configuration sauvegardée")
 
-    def _persist(self):
+    def _persist(self) -> None:
         save_bots([b["config"] for b in self.bots.values()])
 
-    def _start_current(self):
+    def _start_current(self) -> None:
         if not self.selected_id:
             return
         self._collect_form_into_config(self.selected_id)
@@ -1297,10 +1332,12 @@ class SelfbotManagerApp(ctk.CTk):
         self._refresh_action_buttons()
         self.tabs.set("  Logs  ")
 
-    def _stop_bot_async(self, instance, on_done=None):
+    def _stop_bot_async(
+        self, instance: SelfBot, on_done: Callable[[], None] | None = None
+    ) -> None:
         """Run instance.stop() in a daemon thread to keep the Tk loop responsive.
         on_done (if provided) is scheduled on the main thread once stop returns."""
-        def _worker():
+        def _worker() -> None:
             try:
                 instance.stop()
             except Exception:
@@ -1312,7 +1349,9 @@ class SelfbotManagerApp(ctk.CTk):
                     pass
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _stop_all_async(self, then=None, max_wait=6.0):
+    def _stop_all_async(
+        self, then: Callable[[], None] | None = None, max_wait: float = 6.0
+    ) -> None:
         """Stop every live bot in parallel. Fire `then` on the main thread once
         all stops return, or after max_wait seconds — whichever comes first."""
         instances = [b["instance"] for b in self.bots.values() if b["instance"]]
@@ -1320,9 +1359,9 @@ class SelfbotManagerApp(ctk.CTk):
             if then is not None:
                 self.after(0, then)
             return
-        state = {"remaining": len(instances), "fired": False}
+        state: dict[str, Any] = {"remaining": len(instances), "fired": False}
         lock = threading.Lock()
-        def _fire():
+        def _fire() -> None:
             if then is None or state["fired"]:
                 return
             state["fired"] = True
@@ -1330,7 +1369,7 @@ class SelfbotManagerApp(ctk.CTk):
                 self.after(0, then)
             except Exception:
                 pass
-        def _one(inst):
+        def _one(inst: SelfBot) -> None:
             try:
                 inst.stop()
             except Exception:
@@ -1345,7 +1384,7 @@ class SelfbotManagerApp(ctk.CTk):
         # Hard ceiling in case bot_core's own timeout is exceeded.
         self.after(int(max_wait * 1000), _fire)
 
-    def _stop_current(self):
+    def _stop_current(self) -> None:
         if not self.selected_id:
             return
         bot = self.bots[self.selected_id]
@@ -1353,13 +1392,13 @@ class SelfbotManagerApp(ctk.CTk):
             return
         self.stop_btn.configure(state="disabled", text="■ Arrêt…")
         bid = self.selected_id
-        def _restore():
+        def _restore() -> None:
             self.stop_btn.configure(text="■ Arrêter")
             if self.selected_id == bid:
                 self._refresh_action_buttons()
         self._stop_bot_async(bot["instance"], on_done=_restore)
 
-    def _delete_current(self):
+    def _delete_current(self) -> None:
         if not self.selected_id:
             return
         bot = self.bots[self.selected_id]
@@ -1389,7 +1428,7 @@ class SelfbotManagerApp(ctk.CTk):
         self.wishlist_series.delete("1.0", "end")
         self._show_empty_state()
 
-    def _clear_current_logs(self):
+    def _clear_current_logs(self) -> None:
         if not self.selected_id:
             return
         bot = self.bots[self.selected_id]
@@ -1401,7 +1440,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Logs polling ----------
 
-    def _drain_logs(self):
+    def _drain_logs(self) -> None:
         try:
             for bot_id, bot in self.bots.items():
                 inst = bot["instance"]
@@ -1418,7 +1457,7 @@ class SelfbotManagerApp(ctk.CTk):
         finally:
             self.after(120, self._drain_logs)
 
-    def _append_log_line(self, bot_id, level, line):
+    def _append_log_line(self, bot_id: str, level: str, line: str) -> None:
         bot = self.bots.get(bot_id)
         if not bot:
             return
@@ -1441,7 +1480,7 @@ class SelfbotManagerApp(ctk.CTk):
             tb.see("end")
             tb.configure(state="disabled")
 
-    def _on_bot_status_change(self, bot_id, status):
+    def _on_bot_status_change(self, bot_id: str, status: str) -> None:
         bot = self.bots.get(bot_id)
         if not bot:
             return
@@ -1451,7 +1490,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Theme actions ----------
 
-    def _toggle_theme(self):
+    def _toggle_theme(self) -> None:
         new_mode = "light" if self.theme.mode == "dark" else "dark"
         self.theme.mode = new_mode
         # Toggling preset = on garde les overrides custom si on veut, mais on
@@ -1461,7 +1500,7 @@ class SelfbotManagerApp(ctk.CTk):
         save_settings(self.settings)
         self._rebuild_ui()
 
-    def _open_theme_customizer(self):
+    def _open_theme_customizer(self) -> None:
         T = self.theme
         win = ctk.CTkToplevel(self)
         win.title("Personnaliser les couleurs")
@@ -1495,13 +1534,13 @@ class SelfbotManagerApp(ctk.CTk):
         scroll.pack(fill="both", expand=True, padx=18, pady=(0, 8))
 
         overrides = dict(self.theme.overrides)
-        preview_buttons = {}
+        preview_buttons: dict[str, ctk.CTkButton] = {}
 
-        def base_color(key):
+        def base_color(key: str) -> str:
             return overrides.get(key, PRESETS[self.theme.mode][key])
 
-        def make_pick(key):
-            def pick():
+        def make_pick(key: str) -> Callable[[], None]:
+            def pick() -> None:
                 current = base_color(key)
                 color = colorchooser.askcolor(
                     color=current, parent=win,
@@ -1537,14 +1576,14 @@ class SelfbotManagerApp(ctk.CTk):
         bar = ctk.CTkFrame(win, fg_color="transparent")
         bar.pack(fill="x", padx=24, pady=(8, 18))
 
-        def reset():
+        def reset() -> None:
             overrides.clear()
             for key, btn in preview_buttons.items():
                 c = PRESETS[self.theme.mode][key]
                 btn.configure(text=c, fg_color=c, hover_color=c,
                                 text_color=contrast_text(c))
 
-        def apply():
+        def apply() -> None:
             self.theme.overrides = dict(overrides)
             self.settings["theme"] = {
                 "mode": self.theme.mode,
@@ -1561,7 +1600,7 @@ class SelfbotManagerApp(ctk.CTk):
         self._mk_button(bar, "Appliquer", command=apply,
                           variant="primary", width=130).pack(side="right", padx=(8, 0))
 
-    def _rebuild_ui(self):
+    def _rebuild_ui(self) -> None:
         """Détruit toute l'UI et la reconstruit avec le thème courant.
         Préserve les bots, leurs threads, et les buffers de logs."""
         previously_selected = self.selected_id
@@ -1599,7 +1638,7 @@ class SelfbotManagerApp(ctk.CTk):
 
     # ---------- Close ----------
 
-    def _on_close(self):
+    def _on_close(self) -> None:
         if self.selected_id:
             try:
                 self._collect_form_into_config(self.selected_id)
@@ -1622,7 +1661,7 @@ class SelfbotManagerApp(ctk.CTk):
         self._stop_all_async(then=self.destroy)
 
 
-def run():
+def run() -> None:
     app = SelfbotManagerApp()
     app.mainloop()
 
