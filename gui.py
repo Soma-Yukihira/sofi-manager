@@ -22,6 +22,7 @@ import customtkinter as ctk
 import storage
 import updater
 from bot_core import SelfBot, default_config, sanitize_config
+from crypto import decrypt_token, encrypt_token
 
 # =============================================
 # PyInstaller-safe paths
@@ -144,14 +145,26 @@ def load_bots() -> list[dict[str, Any]]:
         return []
     try:
         with open(CONFIG_PATH, encoding="utf-8") as f:
-            return json.load(f).get("bots", [])
+            bots: list[dict[str, Any]] = json.load(f).get("bots", [])
+        for bot in bots:
+            tok = bot.get("token")
+            if tok:
+                bot["token"] = decrypt_token(tok)
+        return bots
     except Exception as e:
         print(f"⚠ Impossible de charger {CONFIG_PATH}: {e}")
         return []
 
 
 def save_bots(bots: list[dict[str, Any]]) -> None:
-    write_json_atomic(CONFIG_PATH, {"bots": bots})
+    serialised = []
+    for bot in bots:
+        copy = dict(bot)
+        tok = copy.get("token")
+        if tok:
+            copy["token"] = encrypt_token(tok)
+        serialised.append(copy)
+    write_json_atomic(CONFIG_PATH, {"bots": serialised})
 
 
 def load_settings() -> dict[str, Any]:

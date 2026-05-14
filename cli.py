@@ -31,6 +31,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 
 from bot_core import SelfBot, default_config, sanitize_config  # noqa: E402
+from crypto import decrypt_token, encrypt_token  # noqa: E402
 
 # When frozen by PyInstaller, mutable state lives next to the exe, not
 # inside the temporary _MEIPASS extraction dir.
@@ -105,6 +106,10 @@ def load_bots() -> list[dict[str, Any]]:
         return []
     try:
         bots = json.loads(CONFIG_PATH.read_text(encoding="utf-8")).get("bots", [])
+        for bot in bots:
+            tok = bot.get("token")
+            if tok:
+                bot["token"] = decrypt_token(tok)
         return [sanitize_config(bot) for bot in bots]
     except Exception as e:
         cprint(f"{Color.RED}Failed to read {CONFIG_PATH}: {e}{Color.RESET}")
@@ -112,9 +117,16 @@ def load_bots() -> list[dict[str, Any]]:
 
 
 def save_bots(bots: list[dict[str, Any]]) -> None:
+    serialised = []
+    for bot in bots:
+        copy = dict(bot)
+        tok = copy.get("token")
+        if tok:
+            copy["token"] = encrypt_token(tok)
+        serialised.append(copy)
     tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
     tmp.write_text(
-        json.dumps({"bots": bots}, indent=2, ensure_ascii=False) + "\n",
+        json.dumps({"bots": serialised}, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     tmp.replace(CONFIG_PATH)

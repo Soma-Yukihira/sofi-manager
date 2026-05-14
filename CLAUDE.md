@@ -46,7 +46,9 @@ under `dist/` so a clean checkout stays clean.
 
 ## Workflow rules
 
-- **Work only on `main`.** No feature branches, no release branches.
+- **Use feature branches and PRs** — every push to `main` is shipped to
+  users immediately by the auto-updater, so review-before-merge is the
+  only safety rail. Squash-merge into `main`.
 - **Don't push from a dirty tree** without thinking — the auto-updater
   fast-forwards users to your commit as soon as you push.
 - **Don't bypass pre-commit hooks** (`--no-verify`) or signing flags
@@ -75,6 +77,7 @@ under `dist/` so a clean checkout stays clean.
 | `cli.py`                                 | Headless / VPS entry point               |
 | `gui.py`                                 | CustomTkinter UI + theme system + banner |
 | `bot_core.py`                            | `SelfBot` class, SOFI parsing + scoring  |
+| `crypto.py`                              | Fernet token encryption (keyring + file) |
 | `updater.py`                             | Git-source auto-updater (Discord-style)  |
 | `tools/build.py` + `selfbot-manager.spec`| PyInstaller build driver + spec          |
 | `tools/update.py`                        | End-user `git pull` CLI updater          |
