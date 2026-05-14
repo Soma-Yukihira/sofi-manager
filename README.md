@@ -53,7 +53,7 @@ git clone https://github.com/Soma-Yukihira/sofi-manager.git
 cd sofi-manager
 python -m venv env
 # Windows
-.\env\Scripts\activate
+.\env\Scripts\Activate.ps1
 # macOS / Linux
 # source env/bin/activate
 
