@@ -31,7 +31,11 @@ dist/
 *.manifest
 *.toc
 *.pkg
-__pycache__/
+
+# Release artifacts (tools/release.py writes here; never commit)
+*.exe
+*.zip
+dist/releases/
 
 # Virtual environments
 env/
@@ -45,6 +49,7 @@ ENV/
 .vscode/
 .idea/
 .claude/
+.claude/worktrees/
 *.swp
 *.swo
 *~

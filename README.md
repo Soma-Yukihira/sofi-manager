@@ -92,6 +92,26 @@ Click **`⟳  Mises à jour`** in the top bar to check the latest GitHub
 Release — current version, release notes, and a direct link to the
 download page. See [Updating](docs/wiki/Updating.md) for details.
 
+### Publishing a release (maintainers)
+
+```bash
+python tools/release.py --dry-run   # rehearse end-to-end
+python tools/release.py             # tag + push + publish on main
+```
+
+Requires Python 3.10+, Git, and the [GitHub CLI](https://cli.github.com/)
+(`gh auth login`). The script reads `__version__` from
+[`version.py`](version.py) — bump that single file before running. Tag
+format is `vMAJOR.MINOR.PATCH`. The script builds via
+`tools/build.py`, packs `dist/SelfbotManager/` into
+`dist/releases/SelfbotManager-v{version}-windows.zip`, creates the tag,
+pushes it, and publishes a GitHub Release with the archive attached.
+
+The in-app **`⟳ Mises à jour`** button calls the GitHub Releases API and
+compares the latest tag against `version.py:__version__` — so the
+release tag **must match** `__version__` exactly for users to see the
+update.
+
 To pull the latest source while keeping all your local config (tokens,
 themes, bots) untouched:
 
