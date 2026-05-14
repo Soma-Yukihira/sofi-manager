@@ -239,6 +239,21 @@ def iter_component_children(components):
             yield child
 
 
+def _format_drop_recipients(message, exclude_id):
+    """Return '@name' or '@a, @b' for users mentioned in the drop, excluding self.
+
+    Returns empty string if nobody else is mentioned (drop format we don't recognise)."""
+    names = []
+    for user in getattr(message, "mentions", None) or []:
+        uid = getattr(user, "id", None)
+        if uid == exclude_id:
+            continue
+        name = getattr(user, "display_name", None) or getattr(user, "name", None)
+        if name:
+            names.append(f"@{name}")
+    return ", ".join(names)
+
+
 # Patterns multilingues pour SOFI (FR + EN)
 _DROP_TRIGGER_RE = re.compile(
     r'drop\s+des\s+cartes|dropping\s+cards?|drops?\s+cards?',
@@ -337,6 +352,8 @@ class SelfBot:
         self._drop_task = None
         self._cooldown_task = None
         self._night_task = None
+        self._sd_watchdogs: dict[int, asyncio.Task] = {}
+        self._sd_watchdog_timeout = 60.0
 
     # ---------- API publique ----------
 
@@ -376,6 +393,10 @@ class SelfBot:
             for task in (self._drop_task, self._cooldown_task, self._night_task):
                 if task and not task.done():
                     task.cancel()
+            for task in list(self._sd_watchdogs.values()):
+                if task and not task.done():
+                    task.cancel()
+            self._sd_watchdogs.clear()
             try:
                 await self._client.close()
             except Exception:
@@ -464,6 +485,7 @@ class SelfBot:
             try:
                 await channel.send(cfg["message"])
                 self.log("info", f"Drop envoyé dans #{channel.name}")
+                self._arm_sd_watchdog(channel)
                 interval = random.uniform(cfg["interval_min"], cfg["interval_max"])
                 self.log("info", f"⏳ Prochain drop dans {interval/60:.1f} min")
                 await asyncio.sleep(interval)
@@ -477,6 +499,34 @@ class SelfBot:
         if self._drop_task and not self._drop_task.done():
             self._drop_task.cancel()
         self._drop_task = asyncio.create_task(self._drop_loop())
+
+    def _arm_sd_watchdog(self, channel):
+        existing = self._sd_watchdogs.get(channel.id)
+        if existing and not existing.done():
+            existing.cancel()
+        self._sd_watchdogs[channel.id] = asyncio.create_task(
+            self._sd_watchdog_coro(channel)
+        )
+
+    def _cancel_sd_watchdog(self, channel_id):
+        task = self._sd_watchdogs.pop(channel_id, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _sd_watchdog_coro(self, channel):
+        timeout = self._sd_watchdog_timeout
+        try:
+            await asyncio.sleep(timeout)
+        except asyncio.CancelledError:
+            return
+        # Si on est encore le watchdog actif pour ce channel, SOFI n'a rien répondu.
+        if self._sd_watchdogs.get(channel.id) is asyncio.current_task():
+            self._sd_watchdogs.pop(channel.id, None)
+            self.log(
+                "warn",
+                f"⚠️ sd envoyé dans #{channel.name} sans réponse SOFI en {timeout:.0f}s "
+                f"(SOFI down, salon saturé, ou drop pris par un autre user ?)",
+            )
 
     async def _handle_cooldown(self, wait):
         cfg = self.config
@@ -532,6 +582,16 @@ class SelfBot:
         preview = content_clean.strip().replace("\n", " ⏎ ")[:160] or "(vide)"
         self.log("info", f"📥 SOFI: {preview}")
 
+        my_id = client.user.id
+        mentions_me = (
+            client.user.mentioned_in(message)
+            or f"<@{my_id}>" in message.content
+            or f"<@!{my_id}>" in message.content
+        )
+        # SOFI a répondu à notre sd (drop ou cooldown), le watchdog n'a plus à crier.
+        if mentions_me:
+            self._cancel_sd_watchdog(message.channel.id)
+
         # Cooldown
         if _COOLDOWN_RE.search(content_clean):
             wait = parse_cooldown_seconds(content_clean)
@@ -549,15 +609,12 @@ class SelfBot:
         if not _DROP_TRIGGER_RE.search(content_clean):
             return
 
-        # Mention de mon user (couvre <@id>, <@!id>, et message.mentions)
-        my_id = client.user.id
-        mentioned = (
-            client.user.mentioned_in(message)
-            or f"<@{my_id}>" in message.content
-            or f"<@!{my_id}>" in message.content
-        )
-        if not mentioned:
-            self.log("info", "⏭️ Drop ignoré (pas le tien)")
+        if not mentions_me:
+            other = _format_drop_recipients(message, my_id)
+            if other:
+                self.log("info", f"⏭️ Drop pour {other}")
+            else:
+                self.log("info", "⏭️ Drop ignoré (pas le tien)")
             return
 
         self.log("system", f"🎴 Drop détecté dans #{message.channel.name}")
@@ -618,5 +675,12 @@ class SelfBot:
         try:
             await button.click()
             self.log("success", f"💖 Cliqué bouton {button_index+1} ({button.label}❤️)")
+        except discord.HTTPException as e:
+            # Codes courants : 10008 message gone, 40060 interaction already acked,
+            # 50001 missing access, 429 rate limit
+            code = getattr(e, "code", "?")
+            status = getattr(e, "status", "?")
+            text = getattr(e, "text", "") or str(e)
+            self.log("error", f"Erreur clic HTTP {status} (code {code}) : {text}")
         except Exception as e:
-            self.log("error", f"Erreur clic : {e}")
+            self.log("error", f"Erreur clic ({type(e).__name__}) : {e}")

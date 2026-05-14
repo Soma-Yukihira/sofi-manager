@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from bot_core import (
     SelfBot,
+    _format_drop_recipients,
     choose_card,
     default_config,
     iter_component_children,
@@ -159,6 +160,110 @@ class SelfBotStopTests(unittest.TestCase):
         finally:
             loop.call_soon_threadsafe(loop.stop)
             thr.join(timeout=2)
+
+
+class FakeMentionedUser:
+    def __init__(self, uid, name=None, display_name=None):
+        self.id = uid
+        self.name = name
+        self.display_name = display_name
+
+
+class FakeMessage:
+    def __init__(self, mentions):
+        self.mentions = mentions
+
+
+class FormatDropRecipientsTests(unittest.TestCase):
+    def test_empty_when_no_mentions(self):
+        self.assertEqual(_format_drop_recipients(FakeMessage([]), 42), "")
+
+    def test_excludes_self(self):
+        msg = FakeMessage([FakeMentionedUser(42, display_name="me")])
+        self.assertEqual(_format_drop_recipients(msg, 42), "")
+
+    def test_prefers_display_name(self):
+        msg = FakeMessage([FakeMentionedUser(7, name="raw", display_name="Pretty")])
+        self.assertEqual(_format_drop_recipients(msg, 42), "@Pretty")
+
+    def test_falls_back_to_name(self):
+        msg = FakeMessage([FakeMentionedUser(7, name="raw", display_name=None)])
+        self.assertEqual(_format_drop_recipients(msg, 42), "@raw")
+
+    def test_joins_multiple(self):
+        msg = FakeMessage([
+            FakeMentionedUser(1, display_name="a"),
+            FakeMentionedUser(42, display_name="me"),
+            FakeMentionedUser(2, display_name="b"),
+        ])
+        self.assertEqual(_format_drop_recipients(msg, 42), "@a, @b")
+
+
+class SdWatchdogTests(unittest.TestCase):
+    def _run_on_loop(self, coro):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def test_watchdog_fires_after_timeout(self):
+        bot = SelfBot(default_config())
+        bot._sd_watchdog_timeout = 0.05
+        channel = MagicMock()
+        channel.id = 111
+        channel.name = "drop-zone"
+
+        async def scenario():
+            bot._arm_sd_watchdog(channel)
+            task = bot._sd_watchdogs[111]
+            await asyncio.wait_for(task, timeout=1.0)
+
+        self._run_on_loop(scenario())
+
+        levels = [lvl for lvl, _ in list(bot.log_queue.queue)]
+        self.assertIn("warn", levels)
+        warn_msg = next(text for lvl, text in list(bot.log_queue.queue) if lvl == "warn")
+        self.assertIn("drop-zone", warn_msg)
+        self.assertNotIn(111, bot._sd_watchdogs)
+
+    def test_watchdog_cancelled_before_timeout_stays_silent(self):
+        bot = SelfBot(default_config())
+        bot._sd_watchdog_timeout = 1.0  # long; we cancel well before
+        channel = MagicMock()
+        channel.id = 222
+        channel.name = "ch"
+
+        async def scenario():
+            bot._arm_sd_watchdog(channel)
+            await asyncio.sleep(0.01)
+            bot._cancel_sd_watchdog(222)
+            await asyncio.sleep(0.05)
+
+        self._run_on_loop(scenario())
+
+        levels = [lvl for lvl, _ in list(bot.log_queue.queue)]
+        self.assertNotIn("warn", levels)
+        self.assertNotIn(222, bot._sd_watchdogs)
+
+    def test_arm_replaces_previous_watchdog(self):
+        bot = SelfBot(default_config())
+        bot._sd_watchdog_timeout = 1.0
+        channel = MagicMock()
+        channel.id = 333
+        channel.name = "ch"
+
+        async def scenario():
+            bot._arm_sd_watchdog(channel)
+            first = bot._sd_watchdogs[333]
+            bot._arm_sd_watchdog(channel)
+            second = bot._sd_watchdogs[333]
+            await asyncio.sleep(0.01)
+            self.assertIsNot(first, second)
+            self.assertTrue(first.cancelled() or first.done())
+            bot._cancel_sd_watchdog(333)
+
+        self._run_on_loop(scenario())
 
 
 if __name__ == "__main__":
