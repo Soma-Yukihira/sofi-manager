@@ -6,9 +6,7 @@ Thèmes : preset dark (black & gold), preset light (white & gold), couleurs pers
 
 import json
 import sys
-import threading
 import uuid
-import webbrowser
 import tkinter as tk
 from tkinter import messagebox, colorchooser
 from pathlib import Path
@@ -16,8 +14,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from bot_core import SelfBot, default_config, sanitize_config
-from updater import UpdateResult, check_for_update
-from version import __version__
+import updater
 
 
 # =============================================
@@ -320,6 +317,12 @@ class SelfbotManagerApp(ctk.CTk):
         self.after(120, self._drain_logs)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Discord-style update check: fire-and-forget once the UI is up.
+        # The callback marshals back to the Tk thread via `self.after`.
+        updater.check_in_background(
+            lambda n: self.after(0, self._show_update_banner, n)
+        )
+
     # ---------- thème ----------
 
     def _apply_appearance(self):
@@ -451,16 +454,102 @@ class SelfbotManagerApp(ctk.CTk):
             command=self._add_bot, variant="default", width=240,
         ).pack(fill="x", pady=4)
 
+    # ---------- Update banner ----------
+
+    def _build_update_banner(self, parent):
+        """
+        Gold strip above the top bar, hidden until the updater finds new
+        commits on origin/main. The frame is gridded but immediately
+        `grid_remove`d - `_show_update_banner` re-reveals it later.
+        """
+        T = self.theme
+        self.update_banner = ctk.CTkFrame(
+            parent, fg_color=T["accent"], corner_radius=0, height=38,
+        )
+        self.update_banner.grid(row=0, column=0, sticky="ew")
+        self.update_banner.grid_propagate(False)
+        self.update_banner.grid_columnconfigure(0, weight=1)
+
+        self.update_banner_label = ctk.CTkLabel(
+            self.update_banner,
+            text="",
+            text_color=T["text_on_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.update_banner_label.grid(row=0, column=0, sticky="w", padx=18)
+
+        btns = ctk.CTkFrame(self.update_banner, fg_color="transparent")
+        btns.grid(row=0, column=1, sticky="e", padx=10, pady=4)
+        ctk.CTkButton(
+            btns, text="Plus tard",
+            command=self._dismiss_update_banner,
+            fg_color="transparent",
+            hover_color=T["accent_bright"],
+            text_color=T["text_on_accent"],
+            border_width=0,
+            width=80, height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(side="right", padx=4)
+        ctk.CTkButton(
+            btns, text="Redemarrer",
+            command=self._on_update_restart,
+            fg_color=T["text_on_accent"],
+            hover_color=T["bg"],
+            text_color=T["accent"],
+            border_width=0,
+            width=110, height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(side="right", padx=4)
+
+        self.update_banner.grid_remove()
+
+    def _show_update_banner(self, behind: int):
+        msg = (
+            f"  Mise a jour disponible  -  {behind} commit"
+            f"{'s' if behind > 1 else ''} en attente. Redemarrez pour appliquer."
+        )
+        try:
+            self.update_banner_label.configure(text=msg)
+            self.update_banner.grid()
+        except Exception:
+            pass
+
+    def _dismiss_update_banner(self):
+        try:
+            self.update_banner.grid_remove()
+        except Exception:
+            pass
+
+    def _on_update_restart(self):
+        # Persist current form/state before re-execing, just like _on_close.
+        if self.selected_id:
+            try:
+                self._collect_form_into_config(self.selected_id)
+            except Exception:
+                pass
+        for bot in self.bots.values():
+            if bot["instance"]:
+                bot["instance"].stop()
+        self._persist()
+        save_settings(self.settings)
+        ok, msg = updater.apply_and_restart()
+        if not ok:
+            # Pull failed - surface it instead of silently doing nothing.
+            messagebox.showerror("Mise a jour", msg)
+
     def _build_main_panel(self):
         T = self.theme
         main = ctk.CTkFrame(self, fg_color=T["bg"], corner_radius=0)
         main.grid(row=0, column=1, sticky="nsew")
         main.grid_columnconfigure(0, weight=1)
-        main.grid_rowconfigure(1, weight=1)
+        main.grid_rowconfigure(2, weight=1)
+
+        # --- Update banner (hidden until updater finds new commits) ---
+        self._build_update_banner(main)
 
         # --- Top bar ---
         top = ctk.CTkFrame(main, fg_color=T["panel"], corner_radius=0, height=72)
-        top.grid(row=0, column=0, sticky="ew")
+        top.grid(row=1, column=0, sticky="ew")
         top.grid_propagate(False)
         top.grid_columnconfigure(1, weight=1)
 
@@ -478,7 +567,7 @@ class SelfbotManagerApp(ctk.CTk):
         )
         self.status_label.pack(side="left")
 
-        # Theme controls + update check (centre-droit)
+        # Theme controls (centre-droit)
         theme_box = ctk.CTkFrame(top, fg_color="transparent")
         theme_box.grid(row=0, column=1, padx=10, pady=18, sticky="e")
         toggle_text = "☀  Clair" if self.theme.mode == "dark" else "🌙  Sombre"
@@ -486,11 +575,6 @@ class SelfbotManagerApp(ctk.CTk):
                           variant="default", width=100).pack(side="right", padx=4)
         self._mk_button(theme_box, "🎨  Couleurs", command=self._open_theme_customizer,
                           variant="ghost", width=110).pack(side="right", padx=4)
-        self.update_btn = self._mk_button(
-            theme_box, "⟳  Mises à jour",
-            command=self._check_for_updates, variant="ghost", width=140,
-        )
-        self.update_btn.pack(side="right", padx=4)
 
         # Action buttons
         actions = ctk.CTkFrame(top, fg_color="transparent")
@@ -515,7 +599,7 @@ class SelfbotManagerApp(ctk.CTk):
             text_color=T["text"],
             text_color_disabled=T["text_dim"],
         )
-        self.tabs.grid(row=1, column=0, sticky="nsew", padx=24, pady=(18, 24))
+        self.tabs.grid(row=2, column=0, sticky="nsew", padx=24, pady=(18, 24))
 
         self.tab_config   = self.tabs.add("  Configuration  ")
         self.tab_wishlist = self.tabs.add("  Wishlist  ")
@@ -1033,98 +1117,6 @@ class SelfbotManagerApp(ctk.CTk):
         bot["entry"].set_status(status)
         if bot_id == self.selected_id:
             self._refresh_action_buttons()
-
-    # ---------- Update check ----------
-
-    def _check_for_updates(self):
-        btn = getattr(self, "update_btn", None)
-        if btn is not None:
-            btn.configure(state="disabled", text="⟳  Vérification…")
-
-        def worker():
-            result = check_for_update()
-            self.after(0, lambda: self._on_update_result(result))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _on_update_result(self, result: UpdateResult):
-        btn = getattr(self, "update_btn", None)
-        if btn is not None:
-            btn.configure(state="normal", text="⟳  Mises à jour")
-        self._show_update_dialog(result)
-
-    def _show_update_dialog(self, result: UpdateResult):
-        T = self.theme
-        win = ctk.CTkToplevel(self)
-        win.title("Mises à jour")
-        win.geometry("520x420")
-        win.configure(fg_color=T["bg"])
-        win.transient(self)
-        try:
-            win.grab_set()
-        except Exception:
-            pass
-
-        if result.error and not result.update_available:
-            title = "Vérification impossible"
-            title_color = T["error"]
-            subtitle = result.error
-        elif result.update_available:
-            title = "Nouvelle version disponible"
-            title_color = T["accent"]
-            subtitle = (
-                f"Installée : {result.current_version}    →    "
-                f"Disponible : {result.latest_version}"
-            )
-        else:
-            title = "Application à jour"
-            title_color = T["success"]
-            subtitle = f"Version installée : {result.current_version}"
-
-        ctk.CTkLabel(
-            win, text=title.upper(), text_color=title_color,
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(anchor="w", padx=24, pady=(22, 4))
-        ctk.CTkLabel(
-            win, text=subtitle, text_color=T["text"],
-            font=ctk.CTkFont(size=12), justify="left", anchor="w", wraplength=460,
-        ).pack(anchor="w", padx=24, pady=(0, 14))
-
-        if result.release_name:
-            ctk.CTkLabel(
-                win, text=result.release_name, text_color=T["text_dim"],
-                font=ctk.CTkFont(size=11, weight="bold"),
-                justify="left", anchor="w", wraplength=460,
-            ).pack(anchor="w", padx=24, pady=(0, 4))
-
-        if result.release_notes:
-            notes = ctk.CTkTextbox(
-                win, fg_color=T["input_bg"], border_color=T["border"],
-                border_width=1, text_color=T["text"],
-                font=ctk.CTkFont(family="Consolas", size=11),
-            )
-            notes.pack(fill="both", expand=True, padx=24, pady=(4, 14))
-            notes.insert("1.0", result.release_notes)
-            notes.configure(state="disabled")
-        else:
-            ctk.CTkFrame(win, fg_color="transparent").pack(fill="both", expand=True)
-
-        bar = ctk.CTkFrame(win, fg_color="transparent")
-        bar.pack(fill="x", padx=24, pady=(0, 20))
-
-        self._mk_button(
-            bar, "Fermer", command=win.destroy,
-            variant="ghost", width=110,
-        ).pack(side="right")
-
-        if result.release_url:
-            label = "Ouvrir la release" if result.update_available else "Voir sur GitHub"
-            self._mk_button(
-                bar, label,
-                command=lambda url=result.release_url: webbrowser.open(url),
-                variant="primary" if result.update_available else "default",
-                width=170,
-            ).pack(side="right", padx=(8, 8))
 
     # ---------- Theme actions ----------
 

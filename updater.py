@@ -1,127 +1,176 @@
-"""GitHub Releases update check.
+"""
+updater.py - Discord-style auto-update.
 
-Pure stdlib (urllib + json). Returns an :class:`UpdateResult` describing the
-outcome; never raises. The GUI calls :func:`check_for_update` from a worker
-thread and marshals the result back to the Tk main thread.
+Two-phase flow, sources-only (no GitHub Release artifact):
 
-Version comparison is strict SemVer (`MAJOR.MINOR.PATCH`); the leading `v` of
-a tag is tolerated, anything else (e.g. `1.2`, `1.2.3-rc1`) is treated as
-malformed and surfaced as an error rather than a silent miscompare.
+  Phase 1 - startup (`apply_pending_on_startup`):
+      If the local clone is already behind upstream main from a previous
+      `git fetch`, apply with `git pull --ff-only` and re-exec Python so
+      the new code is in effect for this run. Equivalent to Discord
+      applying a previously-downloaded patch on launch.
+
+  Phase 2 - background (`check_in_background`):
+      Run `git fetch` once the GUI is up. If new commits arrived, call
+      the provided callback on the Tk main thread so it can surface a
+      non-blocking banner.
+
+Only active for git-clone installs. ZIP/exe installs (no `.git/`) skip
+silently - they are expected to re-clone or rebuild.
+
+Why no `release file`: this project ships continuously on `main`; users
+follow HEAD. Pinning to a release would add a manual step (tagging)
+without buying safety the fast-forward + dirty-tree checks below don't
+already provide.
 """
 
 from __future__ import annotations
 
-import json
-import re
-import urllib.error
-import urllib.request
-from dataclasses import dataclass
+import os
+import subprocess
+import sys
+import threading
+from pathlib import Path
+from typing import Callable
 
-from version import __repo__, __version__
+ROOT = Path(__file__).resolve().parent
 
-API_URL = f"https://api.github.com/repos/{__repo__}/releases/latest"
-USER_AGENT = f"sofi-manager-updater/{__version__}"
-TIMEOUT_SECONDS = 8
-
-_SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
-_NOTES_MAX_CHARS = 1200
-
-
-@dataclass(frozen=True)
-class UpdateResult:
-    current_version: str
-    latest_version: str | None = None
-    update_available: bool = False
-    release_url: str | None = None
-    release_name: str | None = None
-    release_notes: str | None = None
-    error: str | None = None
+# Suppress console windows on Windows when git is invoked from the GUI
+# (which runs under pythonw.exe / a windowed exe). Without this flag,
+# every `git` call flashes a black cmd window.
+_CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
-def _parse_semver(tag: str) -> tuple[int, int, int] | None:
-    m = _SEMVER_RE.match(tag.strip())
-    if not m:
-        return None
-    return int(m.group(1)), int(m.group(2)), int(m.group(3))
-
-
-def _truncate(text: str, limit: int = _NOTES_MAX_CHARS) -> str:
-    text = text.strip()
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "…"
-
-
-def check_for_update(timeout: float = TIMEOUT_SECONDS) -> UpdateResult:
-    current = __version__
-    req = urllib.request.Request(
-        API_URL,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
+def _git(*args: str, capture: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(ROOT),
+        capture_output=capture,
+        text=True,
+        creationflags=_CREATE_NO_WINDOW,
     )
+
+
+def is_git_clone() -> bool:
+    return (ROOT / ".git").exists()
+
+
+def _int(s: str) -> int:
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return UpdateResult(
-                current_version=current,
-                error="Aucune release publiée pour le moment.",
-            )
-        if e.code == 403:
-            return UpdateResult(
-                current_version=current,
-                error="Limite GitHub atteinte. Réessayez plus tard.",
-            )
-        return UpdateResult(
-            current_version=current,
-            error=f"Erreur GitHub (HTTP {e.code}).",
-        )
-    except urllib.error.URLError:
-        return UpdateResult(
-            current_version=current,
-            error="Pas de connexion réseau ou GitHub indisponible.",
-        )
-    except (TimeoutError, OSError):
-        return UpdateResult(
-            current_version=current,
-            error="Délai dépassé en contactant GitHub.",
-        )
-    except (ValueError, json.JSONDecodeError):
-        return UpdateResult(
-            current_version=current,
-            error="Réponse GitHub invalide.",
-        )
+        return int((s or "0").strip())
+    except ValueError:
+        return 0
 
-    tag = (payload.get("tag_name") or "").strip()
-    release_url = payload.get("html_url") or f"https://github.com/{__repo__}/releases"
-    release_name = (payload.get("name") or "").strip() or None
-    notes = payload.get("body") or ""
-    notes_short = _truncate(notes) if notes else None
 
-    latest_parsed = _parse_semver(tag) if tag else None
-    current_parsed = _parse_semver(current)
+def behind_count() -> int:
+    """Upstream commits not yet in HEAD. 0 if up to date / unknown."""
+    if not is_git_clone():
+        return 0
+    r = _git("rev-list", "--count", "HEAD..@{u}")
+    return _int(r.stdout) if r.returncode == 0 else 0
 
-    if not tag:
-        return UpdateResult(
-            current_version=current,
-            release_url=release_url,
-            error="Release GitHub sans tag.",
-        )
-    if latest_parsed is None or current_parsed is None:
-        return UpdateResult(
-            current_version=current,
-            latest_version=tag or None,
-            release_url=release_url,
-            release_name=release_name,
-            release_notes=notes_short,
-            error="Version malformée — comparaison impossible.",
-        )
 
-    return UpdateResult(
-        current_version=current,
-        latest_version=tag,
-        update_available=latest_parsed > current_parsed,
-        release_url=release_url,
-        release_name=release_name,
-        release_notes=notes_short,
+def ahead_count() -> int:
+    if not is_git_clone():
+        return 0
+    r = _git("rev-list", "--count", "@{u}..HEAD")
+    return _int(r.stdout) if r.returncode == 0 else 0
+
+
+def has_local_changes() -> bool:
+    """True if working tree has uncommitted modifications to tracked files."""
+    if not is_git_clone():
+        return False
+    r = _git("status", "--porcelain", "--untracked-files=no")
+    return bool((r.stdout or "").strip())
+
+
+def current_branch() -> str:
+    r = _git("rev-parse", "--abbrev-ref", "HEAD")
+    return (r.stdout or "").strip() if r.returncode == 0 else ""
+
+
+def _safe_to_pull() -> bool:
+    # Refuse to touch the tree if anything looks unusual - avoids surprising
+    # the user who has local work in progress.
+    return (
+        is_git_clone()
+        and current_branch() == "main"
+        and ahead_count() == 0
+        and not has_local_changes()
     )
+
+
+def _fetch() -> bool:
+    if not is_git_clone():
+        return False
+    try:
+        r = _git("fetch", "--quiet", "origin", "main")
+    except (FileNotFoundError, OSError):
+        return False
+    return r.returncode == 0
+
+
+def _pull() -> tuple[bool, str]:
+    r = _git("pull", "--ff-only", "--quiet", "origin", "main")
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout or "git pull failed").strip()
+    return True, "OK"
+
+
+def _restart() -> None:
+    """Re-exec the current Python interpreter with the same argv."""
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
+def apply_pending_on_startup() -> None:
+    """
+    Apply any update already fetched on the previous session, then re-exec.
+    Silent on any failure - the app must always boot.
+    """
+    if not _safe_to_pull():
+        return
+    if behind_count() == 0:
+        return
+    try:
+        ok, _msg = _pull()
+    except Exception:
+        return
+    if ok:
+        _restart()
+
+
+def check_in_background(on_update_available: Callable[[int], None]) -> None:
+    """
+    Fire-and-forget. Fetches in a daemon thread; if behind, schedules
+    `on_update_available(commit_count)` on the caller's thread.
+
+    The caller is responsible for marshalling the callback onto the Tk main
+    thread - typically by wrapping it in `root.after(0, ...)`.
+    """
+    if not is_git_clone():
+        return
+
+    def _worker() -> None:
+        try:
+            if not _fetch():
+                return
+            n = behind_count()
+            if n > 0 and _safe_to_pull():
+                on_update_available(n)
+        except Exception:
+            # Never let the updater crash the app.
+            pass
+
+    t = threading.Thread(target=_worker, name="updater", daemon=True)
+    t.start()
+
+
+def apply_and_restart() -> tuple[bool, str]:
+    """Called when the user clicks `Restart now`. Pulls then re-execs."""
+    if not _safe_to_pull():
+        return False, "Working tree not safe to fast-forward."
+    ok, msg = _pull()
+    if not ok:
+        return False, msg
+    _restart()
+    return True, "Restarting..."  # unreachable

@@ -88,42 +88,29 @@ barre des tâches*) — l'app se lance sans fenêtre de console.
 
 ### Mettre à jour
 
-Clique sur **`⟳  Mises à jour`** dans la barre du haut pour vérifier la
-dernière GitHub Release — version courante, notes de version et lien
-direct vers la page de téléchargement. Voir
-[Mettre à jour](docs/wiki/Updating-fr.md) pour les détails.
+**Auto-update façon Discord (clones git).** Au démarrage, l'app vérifie
+`origin/main` dans un thread d'arrière-plan. Quand de nouveaux commits
+arrivent, un bandeau doré apparaît en haut de la fenêtre : *Mise à jour
+disponible — Redémarrez pour appliquer*. Un clic sur **Redémarrer**,
+l'app applique `git pull --ff-only`, relance Python, et le nouveau code
+tourne. Pas de fichier de release, pas d'étape manuelle — chaque commit
+sur `main` est une release.
 
-### Publier une release (mainteneurs)
+L'auto-updater reste discret :
+- Désactivé quand `.git/` est absent (ZIP / installs `.exe`).
+- Désactivé si tu as des commits locaux en avance sur `origin/main` ou
+  des modifications non commitées sur des fichiers suivis.
+- `bots.json` et `settings.json` sont gitignorés, ils survivent à
+  chaque update intacts.
 
-```bash
-python tools/release.py --dry-run   # répétition end-to-end
-python tools/release.py             # tag + push + publication sur main
-```
-
-Nécessite Python 3.10+, Git et le [GitHub CLI](https://cli.github.com/)
-(`gh auth login`). Le script lit `__version__` dans
-[`version.py`](version.py) — bump ce fichier unique avant de lancer. Le
-format du tag est `vMAJEUR.MINEUR.PATCH`. Le script build via
-`tools/build.py`, empaquette `dist/SelfbotManager/` dans
-`dist/releases/SelfbotManager-v{version}-windows.zip`, crée le tag, le
-push, et publie une GitHub Release avec l'archive en pièce jointe.
-
-Le bouton **`⟳ Mises à jour`** dans l'app interroge l'API GitHub Releases
-et compare le dernier tag à `version.py:__version__` — donc le tag de la
-release **doit correspondre** exactement à `__version__` pour que les
-utilisateurs voient la mise à jour.
-
-Pour récupérer le dernier code source sans perdre ta config locale
-(tokens, thème, bots) :
+**Update manuel** (résumé verbeux en CLI, utile aussi sur VPS) :
 
 ```bash
 python tools/update.py
 ```
 
-Même commande sur Windows, macOS et Linux. Le script fait un `git
-pull`, rafraîchit les dépendances Python si `requirements.txt` a
-changé et imprime un résumé. `bots.json` et `settings.json` sont
-gitignorés donc rien de local n'est touché.
+Même commande sur Windows, macOS et Linux. Rafraîchit les dépendances
+Python si `requirements.txt` a changé et imprime un résumé propre.
 
 ### Headless / VPS
 

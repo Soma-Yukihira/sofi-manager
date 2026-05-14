@@ -32,10 +32,9 @@ dist/
 *.toc
 *.pkg
 
-# Release artifacts (tools/release.py writes here; never commit)
+# Build outputs (never commit)
 *.exe
 *.zip
-dist/releases/
 
 # Virtual environments
 env/
