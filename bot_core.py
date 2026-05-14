@@ -3,12 +3,16 @@ bot_core.py
 Logique d'un selfbot SOFI encapsulée dans une classe.
 Chaque instance gère son propre client Discord, sa propre boucle asyncio
 et expose ses logs via une queue thread-safe.
+
+Pure helpers vivent ailleurs :
+- `parsing.py`  : extraction et matching des messages SOFI
+- `scoring.py`  : sélection de la carte à cliquer
+- `storage.py`  : persistance SQLite des grabs
 """
 
 import asyncio
 import queue
 import random
-import re
 import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
@@ -16,6 +20,17 @@ from datetime import datetime, timedelta
 import discord
 
 import storage
+from parsing import (
+    extract_full_text,
+    format_drop_recipients,
+    is_cooldown_message,
+    is_drop_trigger,
+    iter_component_children,
+    parse_button_hearts,
+    parse_cooldown_seconds,
+    smart_parse_cards,
+)
+from scoring import choose_card, score_card
 
 SOFI_ID = 853629533855809596
 
@@ -146,180 +161,6 @@ def sanitize_config(cfg: dict) -> dict:
 
     cfg["night_pause_enabled"] = _as_bool(cfg.get("night_pause_enabled", True), True)
     return cfg
-
-
-# =============================================
-# Helpers purs (parsing, scoring)
-# =============================================
-
-def parse_cards(content):
-    cards = []
-    pattern = r'G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)(?=\s*`\d|$)'
-    for i, m in enumerate(re.finditer(pattern, content)):
-        cards.append({
-            "index": i,
-            "name": m.group(2).strip(),
-            "series": m.group(3).strip(),
-            "rarity": int(m.group(1)),
-            "hearts": 0,
-        })
-    return cards
-
-
-def parse_cards_with_hearts(content):
-    cards = []
-    pattern = r'G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)\s*•\s*(\d+)'
-    for i, m in enumerate(re.finditer(pattern, content)):
-        cards.append({
-            "index": i,
-            "name": m.group(2).strip(),
-            "series": m.group(3).strip(),
-            "rarity": int(m.group(1)),
-            "hearts": int(m.group(4)),
-        })
-    return cards
-
-
-def smart_parse_cards(content):
-    return parse_cards_with_hearts(content) or parse_cards(content)
-
-
-def parse_button_hearts(label):
-    """'43' → 43, '1.2k' → 1200, '1k' → 1000. None si invalide."""
-    label = str(label).strip().lower()
-    if label.endswith("k"):
-        try:
-            return int(float(label[:-1]) * 1000)
-        except ValueError:
-            return None
-    try:
-        return int(label)
-    except ValueError:
-        return None
-
-
-def parse_cooldown_seconds(content):
-    m = re.search(
-        r'(?:pr[êe]t\s+dans|ready\s+in)\s*:?\s*(?:(\d+)\s*m\s*)?(\d+)\s*s',
-        content, re.IGNORECASE,
-    )
-    if m:
-        minutes = int(m.group(1)) if m.group(1) else 0
-        seconds = int(m.group(2))
-        return minutes * 60 + seconds
-    return None
-
-
-def extract_full_text(message):
-    """Combine message.content + tous les embeds en un seul string.
-    SOFI met parfois les cartes dans un embed plutôt qu'en texte brut."""
-    parts = [message.content or ""]
-    for emb in message.embeds:
-        if emb.title:
-            parts.append(emb.title)
-        if emb.description:
-            parts.append(emb.description)
-        author = getattr(emb, "author", None)
-        if author and getattr(author, "name", None):
-            parts.append(author.name)
-        for field in getattr(emb, "fields", []):
-            if field.name:
-                parts.append(field.name)
-            if field.value:
-                parts.append(field.value)
-        footer = getattr(emb, "footer", None)
-        if footer and getattr(footer, "text", None):
-            parts.append(footer.text)
-    return "\n".join(p for p in parts if p)
-
-
-def iter_component_children(components):
-    """Yield every child component, no matter how many action rows Discord uses."""
-    for row in components or []:
-        yield from getattr(row, "children", []) or []
-
-
-def _format_drop_recipients(message, exclude_id):
-    """Return '@name' or '@a, @b' for users mentioned in the drop, excluding self.
-
-    Returns empty string if nobody else is mentioned (drop format we don't recognise)."""
-    names = []
-    for user in getattr(message, "mentions", None) or []:
-        uid = getattr(user, "id", None)
-        if uid == exclude_id:
-            continue
-        name = getattr(user, "display_name", None) or getattr(user, "name", None)
-        if name:
-            names.append(f"@{name}")
-    return ", ".join(names)
-
-
-# Patterns multilingues pour SOFI (FR + EN)
-_DROP_TRIGGER_RE = re.compile(
-    r'drop\s+des\s+cartes|dropping\s+cards?|drops?\s+cards?',
-    re.IGNORECASE,
-)
-_COOLDOWN_RE = re.compile(
-    r'pr[êe]t\s+dans|ready\s+in',
-    re.IGNORECASE,
-)
-
-
-def score_card(card, cfg):
-    rarity_norm = max(1.0, _as_float(cfg.get("rarity_norm"), default_config()["rarity_norm"]))
-    hearts_norm = max(1.0, _as_float(cfg.get("hearts_norm"), default_config()["hearts_norm"]))
-    rarity_weight = max(0.0, _as_float(cfg.get("score_rarity_weight"), 0.30))
-    hearts_weight = max(0.0, _as_float(cfg.get("score_hearts_weight"), 0.70))
-
-    rarity_score = max(0.0, 1.0 - _as_float(card.get("rarity"), 0) / rarity_norm)
-    hearts_score = min(1.0, max(0.0, _as_float(card.get("hearts"), 0) / hearts_norm))
-    return round(
-        rarity_weight * rarity_score
-        + hearts_weight * hearts_score,
-        3,
-    )
-
-
-def choose_card(cards, cfg, log):
-    """Retourne l'index de la carte à cliquer, en logguant le raisonnement."""
-    scored = [(c, score_card(c, cfg)) for c in cards]
-    best_card, best_score = max(scored, key=lambda x: x[1])
-
-    wishlist_card = None
-    wishlist_score = 0
-    wishlist_label = ""
-
-    for card, score in scored:
-        for wish in cfg.get("wishlist", []):
-            if wish.lower() in card["name"].lower():
-                if wishlist_card is None or score > wishlist_score:
-                    wishlist_card, wishlist_score = card, score
-                    wishlist_label = "🌟 Wishlist perso"
-
-    if wishlist_card is None:
-        for card, score in scored:
-            for series in cfg.get("wishlist_series", []):
-                if series.lower() in card["series"].lower():
-                    if wishlist_card is None or score > wishlist_score:
-                        wishlist_card, wishlist_score = card, score
-                        wishlist_label = "📺 Wishlist série"
-
-    if wishlist_card is not None:
-        for card, score in scored:
-            log("info", f"  {card['name']} • {card['series']} → score {score} (G•{card['rarity']} | {card['hearts']}❤️)")
-        if best_score >= wishlist_score * cfg["wishlist_override_threshold"] and best_card != wishlist_card:
-            log("warn", f"⚡ {wishlist_label} ignoré : {wishlist_card['name']} (score {wishlist_score}) "
-                        f"< {best_card['name']} (score {best_score})")
-            log("success", f"💡 Meilleur score retenu : {best_card['name']} • {best_card['series']}")
-            return best_card["index"]
-        log("success", f"{wishlist_label} : {wishlist_card['name']} • {wishlist_card['series']} "
-                      f"(G•{wishlist_card['rarity']} | {wishlist_card['hearts']}❤️ | score {wishlist_score})")
-        return wishlist_card["index"]
-
-    for card, score in scored:
-        log("info", f"  {card['name']} • {card['series']} → score {score} (G•{card['rarity']} | {card['hearts']}❤️)")
-    log("success", f"💡 Meilleur score : {best_card['name']} • {best_card['series']} (score {best_score})")
-    return best_card["index"]
 
 
 def _seconds_until(hour, minute=0):
@@ -610,7 +451,7 @@ class SelfBot:
             self._cancel_sd_watchdog(message.channel.id)
 
         # Cooldown
-        if _COOLDOWN_RE.search(content_clean):
+        if is_cooldown_message(content_clean):
             wait = parse_cooldown_seconds(content_clean)
             if wait:
                 if self._drop_task and not self._drop_task.done():
@@ -623,11 +464,11 @@ class SelfBot:
             return
 
         # Drop ?
-        if not _DROP_TRIGGER_RE.search(content_clean):
+        if not is_drop_trigger(content_clean):
             return
 
         if not mentions_me:
-            other = _format_drop_recipients(message, my_id)
+            other = format_drop_recipients(message, my_id)
             if other:
                 self.log("info", f"⏭️ Drop pour {other}")
             else:
