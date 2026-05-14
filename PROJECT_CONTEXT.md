@@ -42,9 +42,19 @@ sofi-manager/
 
 Per-user state created at first launch (gitignored):
 
-- `bots.json` — bot tokens + per-bot config
+- `bots.json` — bot tokens + per-bot config (tokens are Fernet-encrypted
+  with a key kept in the OS keyring; see [crypto.py](crypto.py))
 - `settings.json` — theme mode + 17-slot color customization
 - `Selfbot Manager.lnk` — Windows taskbar shortcut
+
+The encryption key lives in the OS keyring under
+`service="sofi-manager"`, falling back to `<USER_DATA>/key`
+(`%APPDATA%/sofi-manager/` on Windows, `~/.config/sofi-manager/` on
+POSIX). Pre-existing plaintext `bots.json` files keep working — the
+first save after upgrade rewrites every token as ciphertext. Restoring
+`bots.json` from a backup on a different machine without also restoring
+the key will surface a clear error rather than silently corrupting
+state.
 
 ## Build system
 

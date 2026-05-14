@@ -34,7 +34,7 @@
 - 🌍 **Détection SOFI multilingue** — messages drop & cooldown analysés en **français et anglais**
 - 🎨 **Thèmes premium** — presets sombre et clair + personnalisation couleur par couleur (17 slots)
 - 📜 **Logs en direct** — console colorée par bot avec un flux diagnostic de tous les messages SOFI reçus
-- 💾 **Local first** — config et tokens restent sur disque dans `bots.json`, rien n'est envoyé ailleurs
+- 💾 **Local first** — config sur disque dans `bots.json` ; tokens chiffrés (Fernet) avec une clé stockée dans le keyring OS (fallback fichier sous `%APPDATA%/sofi-manager/`)
 
 ---
 
