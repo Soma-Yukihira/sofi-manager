@@ -26,29 +26,33 @@ _COOLDOWN_RE = re.compile(
 
 def parse_cards(content: str) -> list[dict[str, Any]]:
     cards: list[dict[str, Any]] = []
-    pattern = r'G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)(?=\s*`\d|$)'
+    pattern = r"G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)(?=\s*`\d|$)"
     for i, m in enumerate(re.finditer(pattern, content)):
-        cards.append({
-            "index": i,
-            "name": m.group(2).strip(),
-            "series": m.group(3).strip(),
-            "rarity": int(m.group(1)),
-            "hearts": 0,
-        })
+        cards.append(
+            {
+                "index": i,
+                "name": m.group(2).strip(),
+                "series": m.group(3).strip(),
+                "rarity": int(m.group(1)),
+                "hearts": 0,
+            }
+        )
     return cards
 
 
 def parse_cards_with_hearts(content: str) -> list[dict[str, Any]]:
     cards: list[dict[str, Any]] = []
-    pattern = r'G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)\s*•\s*(\d+)'
+    pattern = r"G•`?\s*(\d+)\s*`?\s*\|\s*(.+?)\s*•\s*(.+?)\s*•\s*(\d+)"
     for i, m in enumerate(re.finditer(pattern, content)):
-        cards.append({
-            "index": i,
-            "name": m.group(2).strip(),
-            "series": m.group(3).strip(),
-            "rarity": int(m.group(1)),
-            "hearts": int(m.group(4)),
-        })
+        cards.append(
+            {
+                "index": i,
+                "name": m.group(2).strip(),
+                "series": m.group(3).strip(),
+                "rarity": int(m.group(1)),
+                "hearts": int(m.group(4)),
+            }
+        )
     return cards
 
 
@@ -74,8 +78,9 @@ def parse_button_hearts(label: Any) -> int | None:
 
 def parse_cooldown_seconds(content: str) -> int | None:
     m = re.search(
-        r'(?:pr[êe]t\s+dans|ready\s+in)\s*:?\s*(?:(\d+)\s*m\s*)?(\d+)\s*s',
-        content, re.IGNORECASE,
+        r"(?:pr[êe]t\s+dans|ready\s+in)\s*:?\s*(?:(\d+)\s*m\s*)?(\d+)\s*s",
+        content,
+        re.IGNORECASE,
     )
     if m:
         minutes = int(m.group(1)) if m.group(1) else 0

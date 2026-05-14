@@ -46,8 +46,17 @@ _INSERT = (
 )
 
 _FIELDS = (
-    "id", "ts", "bot_label", "channel_id", "card_name", "series",
-    "rarity", "hearts", "score", "success", "error_code",
+    "id",
+    "ts",
+    "bot_label",
+    "channel_id",
+    "card_name",
+    "series",
+    "rarity",
+    "hearts",
+    "score",
+    "success",
+    "error_code",
 )
 
 # Set of resolved DB paths already passed through init_db this process.
@@ -211,14 +220,8 @@ def compute_stats(
     success = sum(1 for r in items if r.success)
     rate = (success / total) if total else 0.0
 
-    series = Counter(
-        r.series for r in items
-        if r.success and r.series
-    )
-    rarities = Counter(
-        r.rarity for r in items
-        if r.success and r.rarity
-    )
+    series = Counter(r.series for r in items if r.success and r.series)
+    rarities = Counter(r.rarity for r in items if r.success and r.rarity)
 
     now = int(now_ts if now_ts is not None else time.time())
     today_start = _day_bucket(now)

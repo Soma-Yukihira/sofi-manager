@@ -34,6 +34,7 @@ from crypto import decrypt_token, encrypt_token
 #   - USER_DIR   : mutable state (bots.json, settings.json). Always next
 #     to the exe / source so the user can edit/back up these files.
 
+
 def _bundle_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
@@ -47,7 +48,7 @@ def _user_dir() -> Path:
 
 
 BUNDLE_DIR = _bundle_dir()
-USER_DIR   = _user_dir()
+USER_DIR = _user_dir()
 
 
 # =============================================
@@ -55,80 +56,80 @@ USER_DIR   = _user_dir()
 # =============================================
 
 DARK_THEME = {
-    "bg":             "#0a0a0a",
-    "panel":          "#141414",
-    "panel_hover":    "#1c1c1c",
+    "bg": "#0a0a0a",
+    "panel": "#141414",
+    "panel_hover": "#1c1c1c",
     "panel_selected": "#222018",
-    "input_bg":       "#1a1a1a",
-    "border":         "#2a2a2a",
-    "accent":         "#d4af37",
-    "accent_bright":  "#f4d03f",
-    "accent_dim":     "#8b7320",
-    "text":           "#e8e8e8",
-    "text_dim":       "#8a8a8a",
+    "input_bg": "#1a1a1a",
+    "border": "#2a2a2a",
+    "accent": "#d4af37",
+    "accent_bright": "#f4d03f",
+    "accent_dim": "#8b7320",
+    "text": "#e8e8e8",
+    "text_dim": "#8a8a8a",
     "text_on_accent": "#0a0a0a",
-    "success":        "#4ade80",
-    "error":          "#f87171",
-    "warn":           "#fbbf24",
-    "info":           "#9ca3af",
-    "log_bg":         "#050505",
-    "dot_off":        "#444444",
+    "success": "#4ade80",
+    "error": "#f87171",
+    "warn": "#fbbf24",
+    "info": "#9ca3af",
+    "log_bg": "#050505",
+    "dot_off": "#444444",
 }
 
 LIGHT_THEME = {
-    "bg":             "#f4f1ea",
-    "panel":          "#ffffff",
-    "panel_hover":    "#f5f3ee",
+    "bg": "#f4f1ea",
+    "panel": "#ffffff",
+    "panel_hover": "#f5f3ee",
     "panel_selected": "#fbf3dc",
-    "input_bg":       "#fafafa",
-    "border":         "#e5e2da",
-    "accent":         "#b8860b",
-    "accent_bright":  "#d4af37",
-    "accent_dim":     "#8b7320",
-    "text":           "#1f1f1f",
-    "text_dim":       "#6b6b6b",
+    "input_bg": "#fafafa",
+    "border": "#e5e2da",
+    "accent": "#b8860b",
+    "accent_bright": "#d4af37",
+    "accent_dim": "#8b7320",
+    "text": "#1f1f1f",
+    "text_dim": "#6b6b6b",
     "text_on_accent": "#1a1a1a",
-    "success":        "#16a34a",
-    "error":          "#dc2626",
-    "warn":           "#d97706",
-    "info":           "#525252",
-    "log_bg":         "#fdfcf8",
-    "dot_off":        "#bdbdbd",
+    "success": "#16a34a",
+    "error": "#dc2626",
+    "warn": "#d97706",
+    "info": "#525252",
+    "log_bg": "#fdfcf8",
+    "dot_off": "#bdbdbd",
 }
 
 PRESETS = {"dark": DARK_THEME, "light": LIGHT_THEME}
 
 # Slots exposés dans la modale de personnalisation
 THEME_LABELS = [
-    ("bg",             "Fond principal"),
-    ("panel",          "Panneaux / cartes"),
-    ("panel_hover",    "Panneau survolé"),
+    ("bg", "Fond principal"),
+    ("panel", "Panneaux / cartes"),
+    ("panel_hover", "Panneau survolé"),
     ("panel_selected", "Élément sélectionné"),
-    ("input_bg",       "Fond des champs"),
-    ("border",         "Bordures"),
-    ("accent",         "Accent (titre, bordure)"),
-    ("accent_bright",  "Accent vif (boutons)"),
-    ("accent_dim",     "Accent sombre"),
-    ("text",           "Texte principal"),
-    ("text_dim",       "Texte secondaire"),
+    ("input_bg", "Fond des champs"),
+    ("border", "Bordures"),
+    ("accent", "Accent (titre, bordure)"),
+    ("accent_bright", "Accent vif (boutons)"),
+    ("accent_dim", "Accent sombre"),
+    ("text", "Texte principal"),
+    ("text_dim", "Texte secondaire"),
     ("text_on_accent", "Texte sur fond accent"),
-    ("log_bg",         "Fond des logs"),
-    ("success",        "Succès"),
-    ("error",          "Erreur"),
-    ("warn",           "Avertissement"),
-    ("info",           "Info"),
+    ("log_bg", "Fond des logs"),
+    ("success", "Succès"),
+    ("error", "Erreur"),
+    ("warn", "Avertissement"),
+    ("info", "Info"),
 ]
 
 LEVEL_KEYS = {
-    "info":    "info",
+    "info": "info",
     "success": "success",
-    "error":   "error",
-    "warn":    "warn",
-    "system":  "accent",
+    "error": "error",
+    "warn": "warn",
+    "system": "accent",
 }
 
 
-CONFIG_PATH   = USER_DIR / "bots.json"
+CONFIG_PATH = USER_DIR / "bots.json"
 SETTINGS_PATH = USER_DIR / "settings.json"
 
 
@@ -231,6 +232,7 @@ class Theme:
 # Bot list entry (sidebar)
 # =============================================
 
+
 class BotListEntry(ctk.CTkFrame):
     def __init__(
         self,
@@ -247,14 +249,18 @@ class BotListEntry(ctk.CTkFrame):
         self.pack_propagate(False)
 
         self._dot_color = theme["dot_off"]
-        self.dot = tk.Canvas(self, width=12, height=12, bg=theme["panel"],
-                              highlightthickness=0, bd=0)
+        self.dot = tk.Canvas(
+            self, width=12, height=12, bg=theme["panel"], highlightthickness=0, bd=0
+        )
         self.dot_id = self.dot.create_oval(2, 2, 11, 11, fill=self._dot_color, outline="")
         self.dot.pack(side="left", padx=(14, 10), pady=20)
 
         self.label = ctk.CTkLabel(
-            self, text="Bot", text_color=theme["text"],
-            anchor="w", font=ctk.CTkFont(size=13, weight="bold"),
+            self,
+            text="Bot",
+            text_color=theme["text"],
+            anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
         self.label.pack(side="left", fill="x", expand=True, pady=8)
 
@@ -287,10 +293,10 @@ class BotListEntry(ctk.CTkFrame):
 
     def set_status(self, status: str) -> None:
         colors = {
-            "running":  self.theme["success"],
+            "running": self.theme["success"],
             "starting": self.theme["warn"],
-            "error":    self.theme["error"],
-            "stopped":  self.theme["dot_off"],
+            "error": self.theme["error"],
+            "stopped": self.theme["dot_off"],
         }
         self._dot_color = colors.get(status, self.theme["dot_off"])
         self.dot.itemconfig(self.dot_id, fill=self._dot_color)
@@ -300,8 +306,8 @@ class BotListEntry(ctk.CTkFrame):
 # Application principale
 # =============================================
 
-class SelfbotManagerApp(ctk.CTk):
 
+class SelfbotManagerApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.settings = load_settings()
@@ -325,6 +331,7 @@ class SelfbotManagerApp(ctk.CTk):
                 # Force Windows à utiliser une AppUserModelID dédiée
                 # → le taskbar regroupe sous notre icône au lieu de pythonw.exe
                 import ctypes
+
                 # `ctypes.windll` only exists on Windows; dual ignore handles
                 # both platforms (see cli.py:_enable_windows_vt for details).
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(  # type: ignore[attr-defined,unused-ignore]
@@ -347,9 +354,7 @@ class SelfbotManagerApp(ctk.CTk):
 
         # Discord-style update check: fire-and-forget once the UI is up.
         # The callback marshals back to the Tk thread via `self.after`.
-        updater.check_in_background(
-            lambda n: self.after(0, self._show_update_banner, n)
-        )
+        updater.check_in_background(lambda n: self.after(0, self._show_update_banner, n))
 
     # ---------- thème ----------
 
@@ -363,12 +368,15 @@ class SelfbotManagerApp(ctk.CTk):
         self, parent: Any, text: str, dim: bool = False, size: int = 12, bold: bool = False
     ) -> ctk.CTkLabel:
         return ctk.CTkLabel(
-            parent, text=text,
+            parent,
+            text=text,
             text_color=self.theme["text_dim"] if dim else self.theme["text"],
             font=ctk.CTkFont(size=size, weight="bold" if bold else "normal"),
         )
 
-    def _mk_entry(self, parent: Any, show: str | None = None, placeholder: str = "") -> ctk.CTkEntry:
+    def _mk_entry(
+        self, parent: Any, show: str | None = None, placeholder: str = ""
+    ) -> ctk.CTkEntry:
         return ctk.CTkEntry(
             parent,
             fg_color=self.theme["input_bg"],
@@ -411,39 +419,55 @@ class SelfbotManagerApp(ctk.CTk):
         }
         if variant == "primary":
             return ctk.CTkButton(
-                parent, **base,
-                fg_color=T["accent"], hover_color=T["accent_bright"],
-                text_color=T["text_on_accent"], border_width=0,
+                parent,
+                **base,
+                fg_color=T["accent"],
+                hover_color=T["accent_bright"],
+                text_color=T["text_on_accent"],
+                border_width=0,
             )
         if variant == "danger":
             return ctk.CTkButton(
-                parent, **base,
-                fg_color=T["panel"], hover_color=T["panel_hover"],
-                text_color=T["error"], border_color=T["error"], border_width=1,
+                parent,
+                **base,
+                fg_color=T["panel"],
+                hover_color=T["panel_hover"],
+                text_color=T["error"],
+                border_color=T["error"],
+                border_width=1,
             )
         if variant == "ghost":
             return ctk.CTkButton(
-                parent, **base,
-                fg_color="transparent", hover_color=T["panel_hover"],
-                text_color=T["text_dim"], border_width=0,
+                parent,
+                **base,
+                fg_color="transparent",
+                hover_color=T["panel_hover"],
+                text_color=T["text_dim"],
+                border_width=0,
             )
         return ctk.CTkButton(
-            parent, **base,
-            fg_color=T["panel"], hover_color=T["panel_hover"],
-            text_color=T["accent"], border_color=T["accent_dim"], border_width=1,
+            parent,
+            **base,
+            fg_color=T["panel"],
+            hover_color=T["panel_hover"],
+            text_color=T["accent"],
+            border_color=T["accent_dim"],
+            border_width=1,
         )
 
     def _mk_section(self, parent: Any, title: str) -> ctk.CTkFrame:
         T = self.theme
-        wrap = ctk.CTkFrame(parent, fg_color=T["panel"],
-                              corner_radius=8, border_color=T["border"], border_width=1)
+        wrap = ctk.CTkFrame(
+            parent, fg_color=T["panel"], corner_radius=8, border_color=T["border"], border_width=1
+        )
         wrap.pack(fill="x", pady=(0, 14), padx=2)
 
         head = ctk.CTkFrame(wrap, fg_color="transparent", height=42)
         head.pack(fill="x", padx=18, pady=(12, 4))
         ctk.CTkFrame(head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(
-            head, text=title.upper(),
+            head,
+            text=title.upper(),
             text_color=T["accent"],
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(side="left")
@@ -472,16 +496,21 @@ class SelfbotManagerApp(ctk.CTk):
         header.grid(row=0, column=0, sticky="ew", padx=18, pady=(20, 14))
         header.grid_propagate(False)
         ctk.CTkLabel(
-            header, text="⚜  SELFBOT", text_color=T["accent"],
+            header,
+            text="⚜  SELFBOT",
+            text_color=T["accent"],
             font=ctk.CTkFont(size=20, weight="bold"),
         ).pack(anchor="w")
         ctk.CTkLabel(
-            header, text="MANAGER · PREMIUM", text_color=T["text_dim"],
+            header,
+            text="MANAGER · PREMIUM",
+            text_color=T["text_dim"],
             font=ctk.CTkFont(size=10, weight="bold"),
         ).pack(anchor="w")
 
         self.bot_list = ctk.CTkScrollableFrame(
-            side, fg_color="transparent",
+            side,
+            fg_color="transparent",
             scrollbar_button_color=T["accent_dim"],
             scrollbar_button_hover_color=T["accent"],
         )
@@ -491,8 +520,11 @@ class SelfbotManagerApp(ctk.CTk):
         footer.grid(row=2, column=0, sticky="ew", padx=14, pady=(8, 16))
         footer.grid_propagate(False)
         self._mk_button(
-            footer, "  +  AJOUTER UN BOT  ",
-            command=self._add_bot, variant="default", width=240,
+            footer,
+            "  +  AJOUTER UN BOT  ",
+            command=self._add_bot,
+            variant="default",
+            width=240,
         ).pack(fill="x", pady=4)
 
     # ---------- Update banner ----------
@@ -505,7 +537,10 @@ class SelfbotManagerApp(ctk.CTk):
         """
         T = self.theme
         self.update_banner = ctk.CTkFrame(
-            parent, fg_color=T["accent"], corner_radius=0, height=38,
+            parent,
+            fg_color=T["accent"],
+            corner_radius=0,
+            height=38,
         )
         self.update_banner.grid(row=0, column=0, sticky="ew")
         self.update_banner.grid_propagate(False)
@@ -522,23 +557,27 @@ class SelfbotManagerApp(ctk.CTk):
         btns = ctk.CTkFrame(self.update_banner, fg_color="transparent")
         btns.grid(row=0, column=1, sticky="e", padx=10, pady=4)
         ctk.CTkButton(
-            btns, text="Plus tard",
+            btns,
+            text="Plus tard",
             command=self._dismiss_update_banner,
             fg_color="transparent",
             hover_color=T["accent_bright"],
             text_color=T["text_on_accent"],
             border_width=0,
-            width=80, height=28,
+            width=80,
+            height=28,
             font=ctk.CTkFont(size=11, weight="bold"),
         ).pack(side="right", padx=4)
         ctk.CTkButton(
-            btns, text="Redemarrer",
+            btns,
+            text="Redemarrer",
             command=self._on_update_restart,
             fg_color=T["text_on_accent"],
             hover_color=T["bg"],
             text_color=T["accent"],
             border_width=0,
-            width=110, height=28,
+            width=110,
+            height=28,
             font=ctk.CTkFont(size=11, weight="bold"),
         ).pack(side="right", padx=4)
 
@@ -589,12 +628,15 @@ class SelfbotManagerApp(ctk.CTk):
             return
 
         messages = {
-            "uptodate":     ("Mise a jour", "Vous etes a jour."),
-            "not_git":      ("Mise a jour", "Installation sans .git : MAJ automatique desactivee."),
+            "uptodate": ("Mise a jour", "Vous etes a jour."),
+            "not_git": ("Mise a jour", "Installation sans .git : MAJ automatique desactivee."),
             "fetch_failed": ("Mise a jour", "Echec du fetch (hors-ligne ou git absent du PATH)."),
-            "dirty":        ("Mise a jour", "Modifications locales en cours : commit ou stash requis."),
-            "ahead":        ("Mise a jour", "Commits locaux en avance sur origin/main : push ou reset requis."),
-            "error":        ("Mise a jour", "Erreur : " + str(result.get("err") or "inconnue")),
+            "dirty": ("Mise a jour", "Modifications locales en cours : commit ou stash requis."),
+            "ahead": (
+                "Mise a jour",
+                "Commits locaux en avance sur origin/main : push ou reset requis.",
+            ),
+            "error": ("Mise a jour", "Erreur : " + str(result.get("err") or "inconnue")),
         }
         title, msg = messages.get(state, ("Mise a jour", "Etat inconnu."))
         if state == "uptodate":
@@ -619,11 +661,13 @@ class SelfbotManagerApp(ctk.CTk):
                 pass
         self._persist()
         save_settings(self.settings)
+
         def _do_restart() -> None:
             ok, msg = updater.apply_and_restart()
             if not ok:
                 # Pull failed - surface it instead of silently doing nothing.
                 messagebox.showerror("Mise a jour", msg)
+
         # Stop bots off the Tk thread so the banner doesn't freeze before re-exec.
         self._stop_all_async(then=_do_restart)
 
@@ -646,13 +690,17 @@ class SelfbotManagerApp(ctk.CTk):
         # Status indicator
         status_box = ctk.CTkFrame(top, fg_color="transparent")
         status_box.grid(row=0, column=0, padx=22, pady=18, sticky="w")
-        self.status_dot = tk.Canvas(status_box, width=14, height=14,
-                                      bg=T["panel"], highlightthickness=0, bd=0)
-        self.status_dot_id = self.status_dot.create_oval(2, 2, 13, 13,
-                                                            fill=T["dot_off"], outline="")
+        self.status_dot = tk.Canvas(
+            status_box, width=14, height=14, bg=T["panel"], highlightthickness=0, bd=0
+        )
+        self.status_dot_id = self.status_dot.create_oval(
+            2, 2, 13, 13, fill=T["dot_off"], outline=""
+        )
         self.status_dot.pack(side="left", padx=(0, 10), pady=10)
         self.status_label = ctk.CTkLabel(
-            status_box, text="—", text_color=T["text_dim"],
+            status_box,
+            text="—",
+            text_color=T["text_dim"],
             font=ctk.CTkFont(size=14, weight="bold"),
         )
         self.status_label.pack(side="left")
@@ -661,23 +709,40 @@ class SelfbotManagerApp(ctk.CTk):
         theme_box = ctk.CTkFrame(top, fg_color="transparent")
         theme_box.grid(row=0, column=1, padx=10, pady=18, sticky="e")
         toggle_text = "☀  Clair" if self.theme.mode == "dark" else "🌙  Sombre"
-        self._mk_button(theme_box, toggle_text, command=self._toggle_theme,
-                          variant="default", width=100).pack(side="right", padx=4)
-        self._mk_button(theme_box, "🎨  Couleurs", command=self._open_theme_customizer,
-                          variant="ghost", width=110).pack(side="right", padx=4)
+        self._mk_button(
+            theme_box, toggle_text, command=self._toggle_theme, variant="default", width=100
+        ).pack(side="right", padx=4)
+        self._mk_button(
+            theme_box,
+            "🎨  Couleurs",
+            command=self._open_theme_customizer,
+            variant="ghost",
+            width=110,
+        ).pack(side="right", padx=4)
         self.check_updates_btn = self._mk_button(
-            theme_box, "↻  MAJ", command=self._check_updates_now,
-            variant="ghost", width=90,
+            theme_box,
+            "↻  MAJ",
+            command=self._check_updates_now,
+            variant="ghost",
+            width=90,
         )
         self.check_updates_btn.pack(side="right", padx=4)
 
         # Action buttons
         actions = ctk.CTkFrame(top, fg_color="transparent")
         actions.grid(row=0, column=2, padx=20, pady=18, sticky="e")
-        self.save_btn   = self._mk_button(actions, "Sauvegarder", command=self._save_current, width=120)
-        self.delete_btn = self._mk_button(actions, "Supprimer", command=self._delete_current, variant="danger", width=110)
-        self.stop_btn   = self._mk_button(actions, "■ Arrêter", command=self._stop_current, variant="danger", width=110)
-        self.start_btn  = self._mk_button(actions, "▶ Démarrer", command=self._start_current, variant="primary", width=130)
+        self.save_btn = self._mk_button(
+            actions, "Sauvegarder", command=self._save_current, width=120
+        )
+        self.delete_btn = self._mk_button(
+            actions, "Supprimer", command=self._delete_current, variant="danger", width=110
+        )
+        self.stop_btn = self._mk_button(
+            actions, "■ Arrêter", command=self._stop_current, variant="danger", width=110
+        )
+        self.start_btn = self._mk_button(
+            actions, "▶ Démarrer", command=self._start_current, variant="primary", width=130
+        )
         self.start_btn.pack(side="right", padx=8)
         self.stop_btn.pack(side="right", padx=8)
         self.delete_btn.pack(side="right", padx=8)
@@ -685,7 +750,8 @@ class SelfbotManagerApp(ctk.CTk):
 
         # --- Tabview ---
         self.tabs = ctk.CTkTabview(
-            main, fg_color=T["bg"],
+            main,
+            fg_color=T["bg"],
             segmented_button_fg_color=T["panel"],
             segmented_button_selected_color=T["accent"],
             segmented_button_selected_hover_color=T["accent_bright"],
@@ -697,10 +763,10 @@ class SelfbotManagerApp(ctk.CTk):
         self.tabs.grid(row=2, column=0, sticky="nsew", padx=24, pady=(18, 24))
         self.tabs.configure(command=self._on_tab_changed)
 
-        self.tab_config   = self.tabs.add("  Configuration  ")
+        self.tab_config = self.tabs.add("  Configuration  ")
         self.tab_wishlist = self.tabs.add("  Wishlist  ")
-        self.tab_logs     = self.tabs.add("  Logs  ")
-        self.tab_stats    = self.tabs.add("  Stats  ")
+        self.tab_logs = self.tabs.add("  Logs  ")
+        self.tab_stats = self.tabs.add("  Stats  ")
 
         self._stats_refresh_after_id: str | None = None
         self._build_config_tab()
@@ -714,23 +780,28 @@ class SelfbotManagerApp(ctk.CTk):
     def _build_config_tab(self) -> None:
         T = self.theme
         scroll = ctk.CTkScrollableFrame(
-            self.tab_config, fg_color="transparent",
+            self.tab_config,
+            fg_color="transparent",
             scrollbar_button_color=T["accent_dim"],
             scrollbar_button_hover_color=T["accent"],
         )
         scroll.pack(fill="both", expand=True, padx=4, pady=10)
 
         sec = self._mk_section(scroll, "Identité")
-        self._add_field(sec, "name",  "Nom du bot",
-                          placeholder="ex: Mon compte principal")
-        self._add_field(sec, "token", "Token Discord",
-                          placeholder="Coller le token ici", show="•")
+        self._add_field(sec, "name", "Nom du bot", placeholder="ex: Mon compte principal")
+        self._add_field(sec, "token", "Token Discord", placeholder="Coller le token ici", show="•")
 
         sec = self._mk_section(scroll, "Channels")
-        self._add_field(sec, "drop_channel", "ID du salon de drop",
-                          placeholder="123456789012345678", numeric=True)
+        self._add_field(
+            sec,
+            "drop_channel",
+            "ID du salon de drop",
+            placeholder="123456789012345678",
+            numeric=True,
+        )
         self._add_textarea(
-            sec, "all_channels",
+            sec,
+            "all_channels",
             "Salons écoutés (un ID par ligne — le drop channel est inclus auto)",
             height=110,
         )
@@ -753,7 +824,8 @@ class SelfbotManagerApp(ctk.CTk):
         toggle_row = ctk.CTkFrame(sec, fg_color="transparent")
         toggle_row.pack(fill="x", pady=(2, 8))
         self.cfg_widgets["night_pause_enabled"] = ctk.CTkSwitch(
-            toggle_row, text="Activer la pause nocturne (22h–01h)",
+            toggle_row,
+            text="Activer la pause nocturne (22h–01h)",
             text_color=T["text"],
             progress_color=T["accent"],
             button_color=T["accent_bright"],
@@ -781,8 +853,9 @@ class SelfbotManagerApp(ctk.CTk):
         row.grid_columnconfigure((0, 1, 2), weight=1, uniform="t")
         self._add_field_grid(row, 0, "rarity_norm", "Norm rareté", numeric=True)
         self._add_field_grid(row, 1, "hearts_norm", "Norm hearts", numeric=True)
-        self._add_field_grid(row, 2, "wishlist_override_threshold",
-                              "Seuil override wishlist", numeric=True)
+        self._add_field_grid(
+            row, 2, "wishlist_override_threshold", "Seuil override wishlist", numeric=True
+        )
 
     def _add_field(
         self,
@@ -829,23 +902,39 @@ class SelfbotManagerApp(ctk.CTk):
         wrap.grid_columnconfigure((0, 1), weight=1, uniform="w")
         wrap.grid_rowconfigure(0, weight=1)
 
-        for col, (attr, title, hint) in enumerate([
-            ("wishlist_persos", "WISHLIST · PERSONNAGES", "Un nom par ligne (trié auto à la sauvegarde)"),
-            ("wishlist_series", "WISHLIST · SÉRIES",      "Une série par ligne (trié auto à la sauvegarde)"),
-        ]):
+        for col, (attr, title, hint) in enumerate(
+            [
+                (
+                    "wishlist_persos",
+                    "WISHLIST · PERSONNAGES",
+                    "Un nom par ligne (trié auto à la sauvegarde)",
+                ),
+                (
+                    "wishlist_series",
+                    "WISHLIST · SÉRIES",
+                    "Une série par ligne (trié auto à la sauvegarde)",
+                ),
+            ]
+        ):
             col_frame = ctk.CTkFrame(
-                wrap, fg_color=T["panel"], corner_radius=8,
-                border_color=T["border"], border_width=1,
+                wrap,
+                fg_color=T["panel"],
+                corner_radius=8,
+                border_color=T["border"],
+                border_width=1,
             )
-            col_frame.grid(row=0, column=col, sticky="nsew",
-                            padx=(0, 8) if col == 0 else (8, 0))
+            col_frame.grid(row=0, column=col, sticky="nsew", padx=(0, 8) if col == 0 else (8, 0))
             head = ctk.CTkFrame(col_frame, fg_color="transparent")
             head.pack(fill="x", padx=18, pady=(14, 6))
-            ctk.CTkFrame(head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(head, text=title, text_color=T["accent"],
-                            font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+            ctk.CTkFrame(head, fg_color=T["accent"], width=3, height=16).pack(
+                side="left", padx=(0, 10)
+            )
+            ctk.CTkLabel(
+                head, text=title, text_color=T["accent"], font=ctk.CTkFont(size=12, weight="bold")
+            ).pack(side="left")
             self._mk_label(col_frame, hint, dim=True, size=10).pack(
-                anchor="w", padx=18, pady=(0, 4))
+                anchor="w", padx=18, pady=(0, 4)
+            )
             tb = self._mk_textbox(col_frame, height=400)
             tb.pack(fill="both", expand=True, padx=18, pady=(4, 16))
             setattr(self, attr, tb)
@@ -855,18 +944,26 @@ class SelfbotManagerApp(ctk.CTk):
     def _build_logs_tab(self) -> None:
         T = self.theme
         self.logs_container = ctk.CTkFrame(
-            self.tab_logs, fg_color=T["panel"],
-            corner_radius=8, border_color=T["border"], border_width=1,
+            self.tab_logs,
+            fg_color=T["panel"],
+            corner_radius=8,
+            border_color=T["border"],
+            border_width=1,
         )
         self.logs_container.pack(fill="both", expand=True, padx=4, pady=10)
 
         head = ctk.CTkFrame(self.logs_container, fg_color="transparent")
         head.pack(fill="x", padx=18, pady=(14, 6))
         ctk.CTkFrame(head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(head, text="LOGS EN DIRECT", text_color=T["accent"],
-                       font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self._mk_button(head, "Effacer", command=self._clear_current_logs,
-                          variant="ghost", width=80).pack(side="right")
+        ctk.CTkLabel(
+            head,
+            text="LOGS EN DIRECT",
+            text_color=T["accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left")
+        self._mk_button(
+            head, "Effacer", command=self._clear_current_logs, variant="ghost", width=80
+        ).pack(side="right")
 
         self.logs_holder = ctk.CTkFrame(self.logs_container, fg_color="transparent")
         self.logs_holder.pack(fill="both", expand=True, padx=18, pady=(4, 16))
@@ -883,22 +980,26 @@ class SelfbotManagerApp(ctk.CTk):
         T = self.theme
         tb = tk.Text(
             self.logs_holder,
-            bg=T["log_bg"], fg=T["text"],
+            bg=T["log_bg"],
+            fg=T["text"],
             insertbackground=T["accent"],
             selectbackground=T["accent_dim"],
             font=("Consolas", 11),
-            wrap="word", relief="flat", borderwidth=0,
-            padx=12, pady=10,
+            wrap="word",
+            relief="flat",
+            borderwidth=0,
+            padx=12,
+            pady=10,
         )
         for level, key in LEVEL_KEYS.items():
             tb.tag_configure(level, foreground=T[key])
-        tb.tag_configure("system",
-                          foreground=T["accent_bright"],
-                          font=("Consolas", 11, "bold"))
+        tb.tag_configure("system", foreground=T["accent_bright"], font=("Consolas", 11, "bold"))
 
         sb = ctk.CTkScrollbar(
-            self.logs_holder, command=tb.yview,
-            button_color=T["accent_dim"], button_hover_color=T["accent"],
+            self.logs_holder,
+            command=tb.yview,
+            button_color=T["accent_dim"],
+            button_hover_color=T["accent"],
         )
         tb.configure(yscrollcommand=sb.set, state="disabled")
         return tb, sb
@@ -915,61 +1016,86 @@ class SelfbotManagerApp(ctk.CTk):
         head.pack(fill="x", pady=(0, 12))
         ctk.CTkFrame(head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(
-            head, text="STATISTIQUES DES GRABS", text_color=T["accent"],
+            head,
+            text="STATISTIQUES DES GRABS",
+            text_color=T["accent"],
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(side="left")
         self._mk_button(
-            head, "↻  Refresh", command=self._refresh_stats,
-            variant="ghost", width=90,
+            head,
+            "↻  Refresh",
+            command=self._refresh_stats,
+            variant="ghost",
+            width=90,
         ).pack(side="right")
 
         # KPI row
         self.stats_kpi_widgets: dict[str, ctk.CTkLabel] = {}
         kpi_row = ctk.CTkFrame(wrap, fg_color="transparent")
         kpi_row.pack(fill="x", pady=(0, 14))
-        for col, (key, title) in enumerate([
-            ("total",        "TOTAL GRABS"),
-            ("success_rate", "SUCCESS RATE"),
-            ("top_series",   "TOP 3 SÉRIES"),
-            ("top_rarities", "TOP 3 RARETÉS"),
-        ]):
+        for col, (key, title) in enumerate(
+            [
+                ("total", "TOTAL GRABS"),
+                ("success_rate", "SUCCESS RATE"),
+                ("top_series", "TOP 3 SÉRIES"),
+                ("top_rarities", "TOP 3 RARETÉS"),
+            ]
+        ):
             kpi_row.grid_columnconfigure(col, weight=1, uniform="kpi")
             card = ctk.CTkFrame(
-                kpi_row, fg_color=T["panel"], corner_radius=8,
-                border_color=T["border"], border_width=1,
+                kpi_row,
+                fg_color=T["panel"],
+                corner_radius=8,
+                border_color=T["border"],
+                border_width=1,
             )
             card.grid(row=0, column=col, sticky="nsew", padx=4, pady=0)
             ctk.CTkLabel(
-                card, text=title, text_color=T["text_dim"],
+                card,
+                text=title,
+                text_color=T["text_dim"],
                 font=ctk.CTkFont(size=10, weight="bold"),
             ).pack(anchor="w", padx=14, pady=(12, 2))
             value = ctk.CTkLabel(
-                card, text="—", text_color=T["accent"],
+                card,
+                text="—",
+                text_color=T["accent"],
                 font=ctk.CTkFont(size=22, weight="bold"),
-                justify="left", anchor="w",
+                justify="left",
+                anchor="w",
             )
             value.pack(anchor="w", fill="x", padx=14, pady=(0, 14))
             self.stats_kpi_widgets[key] = value
 
         # Chart panel
         chart_panel = ctk.CTkFrame(
-            wrap, fg_color=T["panel"], corner_radius=8,
-            border_color=T["border"], border_width=1,
+            wrap,
+            fg_color=T["panel"],
+            corner_radius=8,
+            border_color=T["border"],
+            border_width=1,
         )
         chart_panel.pack(fill="both", expand=True, pady=(0, 0))
 
         chart_head = ctk.CTkFrame(chart_panel, fg_color="transparent")
         chart_head.pack(fill="x", padx=18, pady=(14, 6))
-        ctk.CTkFrame(chart_head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
+        ctk.CTkFrame(chart_head, fg_color=T["accent"], width=3, height=16).pack(
+            side="left", padx=(0, 10)
+        )
         ctk.CTkLabel(
-            chart_head, text="GRABS / JOUR (14 DERNIERS JOURS)", text_color=T["accent"],
+            chart_head,
+            text="GRABS / JOUR (14 DERNIERS JOURS)",
+            text_color=T["accent"],
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(side="left")
 
         # Plain tk.Canvas — CustomTkinter has no chart widget. ~30 lines of
         # bar-drawing keeps the bundle slim (no matplotlib in PyInstaller).
         self.stats_canvas = tk.Canvas(
-            chart_panel, bg=T["panel"], highlightthickness=0, height=240,
+            chart_panel,
+            bg=T["panel"],
+            highlightthickness=0,
+            height=240,
         )
         self.stats_canvas.pack(fill="both", expand=True, padx=18, pady=(4, 16))
         self.stats_canvas.bind("<Configure>", lambda _e: self._redraw_stats_chart())
@@ -1042,8 +1168,9 @@ class SelfbotManagerApp(ctk.CTk):
         if not items:
             return "—"
         # Trim long series names so the KPI card stays compact.
-        return "\n".join(f"{(name[:18] + '…') if len(name) > 19 else name} · {n}"
-                         for name, n in items)
+        return "\n".join(
+            f"{(name[:18] + '…') if len(name) > 19 else name} · {n}" for name, n in items
+        )
 
     def _redraw_stats_chart(self) -> None:
         if not hasattr(self, "stats_canvas"):
@@ -1057,7 +1184,8 @@ class SelfbotManagerApp(ctk.CTk):
 
         if self._stats_last is None or not self._stats_last.daily_counts:
             canvas.create_text(
-                width / 2, height / 2,
+                width / 2,
+                height / 2,
                 text="aucune donnée",
                 fill=T["text_dim"],
                 font=("Segoe UI", 11),
@@ -1077,14 +1205,17 @@ class SelfbotManagerApp(ctk.CTk):
 
         # Y-axis baseline
         canvas.create_line(
-            pad_left, pad_top + plot_h,
-            pad_left + plot_w, pad_top + plot_h,
+            pad_left,
+            pad_top + plot_h,
+            pad_left + plot_w,
+            pad_top + plot_h,
             fill=T["border"],
         )
 
         if max_count == 0:
             canvas.create_text(
-                pad_left + plot_w / 2, pad_top + plot_h / 2,
+                pad_left + plot_w / 2,
+                pad_top + plot_h / 2,
                 text="0 grab sur la fenêtre",
                 fill=T["text_dim"],
                 font=("Segoe UI", 11),
@@ -1101,7 +1232,8 @@ class SelfbotManagerApp(ctk.CTk):
             canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
             if count:
                 canvas.create_text(
-                    (x0 + x1) / 2, y0 - 8,
+                    (x0 + x1) / 2,
+                    y0 - 8,
                     text=str(count),
                     fill=T["text"],
                     font=("Segoe UI", 9, "bold"),
@@ -1110,7 +1242,8 @@ class SelfbotManagerApp(ctk.CTk):
             if i % 2 == 0 or i == n - 1:
                 label = datetime.fromtimestamp(bucket_ts).strftime("%d/%m")
                 canvas.create_text(
-                    (x0 + x1) / 2, y1 + 12,
+                    (x0 + x1) / 2,
+                    y1 + 12,
                     text=label,
                     fill=T["text_dim"],
                     font=("Segoe UI", 9),
@@ -1119,8 +1252,9 @@ class SelfbotManagerApp(ctk.CTk):
     # ---------- Empty / select state ----------
 
     def _show_empty_state(self) -> None:
-        self.status_label.configure(text="—  Aucun bot sélectionné",
-                                       text_color=self.theme["text_dim"])
+        self.status_label.configure(
+            text="—  Aucun bot sélectionné", text_color=self.theme["text_dim"]
+        )
         self.status_dot.itemconfig(self.status_dot_id, fill=self.theme["dot_off"])
         for btn in (self.start_btn, self.stop_btn, self.delete_btn, self.save_btn):
             btn.configure(state="disabled")
@@ -1143,16 +1277,18 @@ class SelfbotManagerApp(ctk.CTk):
     def _update_status_header(self, status: str) -> None:
         T = self.theme
         labels = {
-            "running":  ("●  EN MARCHE",  T["success"]),
+            "running": ("●  EN MARCHE", T["success"]),
             "starting": ("●  CONNEXION…", T["warn"]),
-            "error":    ("●  ERREUR",     T["error"]),
-            "stopped":  ("●  ARRÊTÉ",     T["text_dim"]),
+            "error": ("●  ERREUR", T["error"]),
+            "stopped": ("●  ARRÊTÉ", T["text_dim"]),
         }
         text, color = labels.get(status, ("—", T["text_dim"]))
         self.status_label.configure(text=text, text_color=color)
         dot_color = {
-            "running": T["success"], "starting": T["warn"],
-            "error": T["error"], "stopped": T["dot_off"],
+            "running": T["success"],
+            "starting": T["warn"],
+            "error": T["error"],
+            "stopped": T["dot_off"],
         }.get(status, T["dot_off"])
         self.status_dot.itemconfig(self.status_dot_id, fill=dot_color)
 
@@ -1180,8 +1316,9 @@ class SelfbotManagerApp(ctk.CTk):
         entry.set_name(cfg.get("name", "Sans nom"))
         if instance:
             entry.set_status(instance.status)
-            instance.status_callback = lambda s, bid=bot_id: \
-                self.after(0, lambda: self._on_bot_status_change(bid, s))
+            instance.status_callback = lambda s, bid=bot_id: self.after(
+                0, lambda: self._on_bot_status_change(bid, s)
+            )
 
         self.bots[bot_id] = {
             "config": cfg,
@@ -1285,8 +1422,12 @@ class SelfbotManagerApp(ctk.CTk):
                     try:
                         if key == "drop_channel":
                             cfg[key] = int(raw) if raw else 0
-                        elif key in ("cooldown_extra_min", "cooldown_extra_max",
-                                      "rarity_norm", "hearts_norm"):
+                        elif key in (
+                            "cooldown_extra_min",
+                            "cooldown_extra_max",
+                            "rarity_norm",
+                            "hearts_norm",
+                        ):
                             cfg[key] = int(float(raw)) if raw else 0
                         elif key in ("pause_duration_min", "pause_duration_max"):
                             cfg[key] = float(raw) * 3600 if raw else 0
@@ -1321,8 +1462,7 @@ class SelfbotManagerApp(ctk.CTk):
         self.wishlist_series.delete("1.0", "end")
         self.wishlist_series.insert("1.0", "\n".join(cfg["wishlist_series"]))
 
-        self._append_log_line(self.selected_id, "system",
-                                "Configuration sauvegardée")
+        self._append_log_line(self.selected_id, "system", "Configuration sauvegardée")
 
     def _persist(self) -> None:
         save_bots([b["config"] for b in self.bots.values()])
@@ -1335,23 +1475,25 @@ class SelfbotManagerApp(ctk.CTk):
 
         bot = self.bots[self.selected_id]
         if bot["instance"] and bot["instance"].status in (
-                SelfBot.STATUS_RUNNING, SelfBot.STATUS_STARTING):
+            SelfBot.STATUS_RUNNING,
+            SelfBot.STATUS_STARTING,
+        ):
             return
 
         instance = SelfBot(bot["config"])
         bid = self.selected_id
-        instance.status_callback = lambda s, bid=bid: \
-            self.after(0, lambda: self._on_bot_status_change(bid, s))
+        instance.status_callback = lambda s, bid=bid: self.after(
+            0, lambda: self._on_bot_status_change(bid, s)
+        )
         bot["instance"] = instance
         instance.start()
         self._refresh_action_buttons()
         self.tabs.set("  Logs  ")
 
-    def _stop_bot_async(
-        self, instance: SelfBot, on_done: Callable[[], None] | None = None
-    ) -> None:
+    def _stop_bot_async(self, instance: SelfBot, on_done: Callable[[], None] | None = None) -> None:
         """Run instance.stop() in a daemon thread to keep the Tk loop responsive.
         on_done (if provided) is scheduled on the main thread once stop returns."""
+
         def _worker() -> None:
             try:
                 instance.stop()
@@ -1362,6 +1504,7 @@ class SelfbotManagerApp(ctk.CTk):
                     self.after(0, on_done)
                 except Exception:
                     pass
+
         threading.Thread(target=_worker, daemon=True).start()
 
     def _stop_all_async(
@@ -1376,6 +1519,7 @@ class SelfbotManagerApp(ctk.CTk):
             return
         state: dict[str, Any] = {"remaining": len(instances), "fired": False}
         lock = threading.Lock()
+
         def _fire() -> None:
             if then is None or state["fired"]:
                 return
@@ -1384,6 +1528,7 @@ class SelfbotManagerApp(ctk.CTk):
                 self.after(0, then)
             except Exception:
                 pass
+
         def _one(inst: SelfBot) -> None:
             try:
                 inst.stop()
@@ -1394,6 +1539,7 @@ class SelfbotManagerApp(ctk.CTk):
                 done = state["remaining"] == 0
             if done:
                 _fire()
+
         for inst in instances:
             threading.Thread(target=_one, args=(inst,), daemon=True).start()
         # Hard ceiling in case bot_core's own timeout is exceeded.
@@ -1407,10 +1553,12 @@ class SelfbotManagerApp(ctk.CTk):
             return
         self.stop_btn.configure(state="disabled", text="■ Arrêt…")
         bid = self.selected_id
+
         def _restore() -> None:
             self.stop_btn.configure(text="■ Arrêter")
             if self.selected_id == bid:
                 self._refresh_action_buttons()
+
         self._stop_bot_async(bot["instance"], on_done=_restore)
 
     def _delete_current(self) -> None:
@@ -1528,21 +1676,24 @@ class SelfbotManagerApp(ctk.CTk):
             pass
 
         ctk.CTkLabel(
-            win, text="PERSONNALISER LE THÈME",
+            win,
+            text="PERSONNALISER LE THÈME",
             text_color=T["accent"],
             font=ctk.CTkFont(size=14, weight="bold"),
         ).pack(anchor="w", padx=24, pady=(20, 4))
         ctk.CTkLabel(
             win,
             text="Cliquez sur une couleur pour la modifier. "
-                  "Réinitialiser revient au preset actuel.",
+            "Réinitialiser revient au preset actuel.",
             text_color=T["text_dim"],
             font=ctk.CTkFont(size=11),
-            justify="left", anchor="w",
+            justify="left",
+            anchor="w",
         ).pack(anchor="w", padx=24, pady=(0, 14))
 
         scroll = ctk.CTkScrollableFrame(
-            win, fg_color="transparent",
+            win,
+            fg_color="transparent",
             scrollbar_button_color=T["accent_dim"],
             scrollbar_button_hover_color=T["accent"],
         )
@@ -1558,31 +1709,46 @@ class SelfbotManagerApp(ctk.CTk):
             def pick() -> None:
                 current = base_color(key)
                 color = colorchooser.askcolor(
-                    color=current, parent=win,
+                    color=current,
+                    parent=win,
                     title=f"Choisir : {dict(THEME_LABELS)[key]}",
                 )
                 if color and color[1]:
                     overrides[key] = color[1]
                     btn = preview_buttons[key]
                     btn.configure(
-                        text=color[1], fg_color=color[1], hover_color=color[1],
+                        text=color[1],
+                        fg_color=color[1],
+                        hover_color=color[1],
                         text_color=contrast_text(color[1]),
                     )
+
             return pick
 
         for key, label in THEME_LABELS:
             row = ctk.CTkFrame(scroll, fg_color="transparent")
             row.pack(fill="x", pady=3)
-            ctk.CTkLabel(row, text=label, text_color=T["text"],
-                            width=220, anchor="w",
-                            font=ctk.CTkFont(size=12)).pack(side="left", padx=4)
+            ctk.CTkLabel(
+                row,
+                text=label,
+                text_color=T["text"],
+                width=220,
+                anchor="w",
+                font=ctk.CTkFont(size=12),
+            ).pack(side="left", padx=4)
             current = base_color(key)
             btn = ctk.CTkButton(
-                row, text=current, command=make_pick(key),
-                fg_color=current, hover_color=current,
+                row,
+                text=current,
+                command=make_pick(key),
+                fg_color=current,
+                hover_color=current,
                 text_color=contrast_text(current),
-                border_color=T["border"], border_width=1,
-                corner_radius=4, width=200, height=30,
+                border_color=T["border"],
+                border_width=1,
+                corner_radius=4,
+                width=200,
+                height=30,
                 font=ctk.CTkFont(family="Consolas", size=11),
             )
             btn.pack(side="right", padx=4)
@@ -1595,8 +1761,7 @@ class SelfbotManagerApp(ctk.CTk):
             overrides.clear()
             for key, btn in preview_buttons.items():
                 c = PRESETS[self.theme.mode][key]
-                btn.configure(text=c, fg_color=c, hover_color=c,
-                                text_color=contrast_text(c))
+                btn.configure(text=c, fg_color=c, hover_color=c, text_color=contrast_text(c))
 
         def apply() -> None:
             self.theme.overrides = dict(overrides)
@@ -1608,12 +1773,15 @@ class SelfbotManagerApp(ctk.CTk):
             win.destroy()
             self._rebuild_ui()
 
-        self._mk_button(bar, "Réinitialiser", command=reset,
-                          variant="default", width=130).pack(side="left")
-        self._mk_button(bar, "Annuler", command=win.destroy,
-                          variant="ghost", width=110).pack(side="right", padx=(8, 0))
-        self._mk_button(bar, "Appliquer", command=apply,
-                          variant="primary", width=130).pack(side="right", padx=(8, 0))
+        self._mk_button(bar, "Réinitialiser", command=reset, variant="default", width=130).pack(
+            side="left"
+        )
+        self._mk_button(bar, "Annuler", command=win.destroy, variant="ghost", width=110).pack(
+            side="right", padx=(8, 0)
+        )
+        self._mk_button(bar, "Appliquer", command=apply, variant="primary", width=130).pack(
+            side="right", padx=(8, 0)
+        )
 
     def _rebuild_ui(self) -> None:
         """Détruit toute l'UI et la reconstruit avec le thème courant.

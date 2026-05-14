@@ -41,9 +41,9 @@ class InitDbTests(_TmpDB):
         self.assertEqual(path, self.db_path)
         self.assertTrue(self.db_path.exists())
         with closing(sqlite3.connect(str(self.db_path))) as conn:
-            tables = {r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )}
+            tables = {
+                r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
         self.assertIn("grabs", tables)
 
     def test_creates_parent_directory(self):
@@ -62,9 +62,9 @@ class InitDbTests(_TmpDB):
     def test_creates_useful_indexes(self):
         init_db(self.db_path)
         with closing(sqlite3.connect(str(self.db_path))) as conn:
-            indexes = {r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
-            )}
+            indexes = {
+                r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
+            }
         self.assertIn("idx_grabs_ts", indexes)
         self.assertIn("idx_grabs_bot_ts", indexes)
 
@@ -202,9 +202,13 @@ class IterGrabsTests(_TmpDB):
             self.assertLessEqual(r.ts, 1_700_000_500)
 
     def test_filter_combined(self):
-        rows = list(iter_grabs(
-            self.db_path, bot_label="bot[1]", success=False,
-        ))
+        rows = list(
+            iter_grabs(
+                self.db_path,
+                bot_label="bot[1]",
+                success=False,
+            )
+        )
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].error_code, "10008")
 
@@ -224,8 +228,10 @@ class DefaultDbPathTests(unittest.TestCase):
 
     def test_windows_uses_appdata(self):
         env = {"APPDATA": r"C:\Users\Test\AppData\Roaming"}
-        with patch.dict(os.environ, env, clear=True), \
-                patch.object(storage.sys, "platform", "win32"):
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(storage.sys, "platform", "win32"),
+        ):
             path = default_db_path()
         self.assertEqual(
             path,
@@ -233,16 +239,20 @@ class DefaultDbPathTests(unittest.TestCase):
         )
 
     def test_posix_uses_xdg_or_local_share(self):
-        with patch.dict(os.environ, {}, clear=True), \
-                patch.object(storage.sys, "platform", "linux"), \
-                patch.object(Path, "home", staticmethod(lambda: Path("/home/test"))):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(storage.sys, "platform", "linux"),
+            patch.object(Path, "home", staticmethod(lambda: Path("/home/test"))),
+        ):
             path = default_db_path()
         self.assertEqual(path, Path("/home/test/.local/share/sofi-manager/grabs.db"))
 
     def test_posix_respects_xdg_data_home(self):
         env = {"XDG_DATA_HOME": "/custom/data"}
-        with patch.dict(os.environ, env, clear=True), \
-                patch.object(storage.sys, "platform", "linux"):
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(storage.sys, "platform", "linux"),
+        ):
             path = default_db_path()
         self.assertEqual(path, Path("/custom/data/sofi-manager/grabs.db"))
 
@@ -293,7 +303,7 @@ class ComputeStatsTests(unittest.TestCase):
             GrabRecord(success=True, series="Touhou"),
             GrabRecord(success=True, series="Vocaloid"),
             GrabRecord(success=False, series="Vocaloid"),  # failure: ignored
-            GrabRecord(success=True, series=None),         # null series: ignored
+            GrabRecord(success=True, series=None),  # null series: ignored
             GrabRecord(success=True, series="Madoka"),
             GrabRecord(success=True, series="Touhou"),
         ]
@@ -311,9 +321,11 @@ class ComputeStatsTests(unittest.TestCase):
         now = int(datetime(2026, 5, 14, 12, 0, 0).timestamp())
         one_day = 86_400
         records = [
-            GrabRecord(ts=now, success=True),                # today
-            GrabRecord(ts=now - one_day, success=True),      # yesterday
-            GrabRecord(ts=now - one_day, success=False),     # yesterday (failure also counted in daily)
+            GrabRecord(ts=now, success=True),  # today
+            GrabRecord(ts=now - one_day, success=True),  # yesterday
+            GrabRecord(
+                ts=now - one_day, success=False
+            ),  # yesterday (failure also counted in daily)
             GrabRecord(ts=now - 5 * one_day, success=True),  # 5 days ago
         ]
         stats = compute_stats(records, days=7, now_ts=now)
@@ -323,9 +335,9 @@ class ComputeStatsTests(unittest.TestCase):
         self.assertEqual(starts, sorted(starts))
         counts = [c for _, c in stats.daily_counts]
         # today=1, yesterday=2, day-5=1, the rest 0.
-        self.assertEqual(counts[-1], 1)   # today
-        self.assertEqual(counts[-2], 2)   # yesterday
-        self.assertEqual(counts[-6], 1)   # 5 days ago
+        self.assertEqual(counts[-1], 1)  # today
+        self.assertEqual(counts[-2], 2)  # yesterday
+        self.assertEqual(counts[-6], 1)  # 5 days ago
         self.assertEqual(sum(counts), 4)
 
     def test_daily_counts_drops_grabs_outside_window(self):
