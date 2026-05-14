@@ -7,12 +7,20 @@ import sqlite3
 import time
 import unittest
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import storage
-from storage import GrabRecord, default_db_path, init_db, iter_grabs, record_grab
+from storage import (
+    GrabRecord,
+    compute_stats,
+    default_db_path,
+    init_db,
+    iter_grabs,
+    record_grab,
+)
 
 
 class _TmpDB(unittest.TestCase):
@@ -253,6 +261,83 @@ class FailureModeTests(_TmpDB):
         missing = self.db_path.parent / "phantom.db"
         list(iter_grabs(missing))
         self.assertFalse(missing.exists())
+
+
+class ComputeStatsTests(unittest.TestCase):
+    def test_empty_input_yields_zero_stats(self):
+        stats = compute_stats([], days=14)
+        self.assertEqual(stats.total, 0)
+        self.assertEqual(stats.success, 0)
+        self.assertEqual(stats.success_rate, 0.0)
+        self.assertEqual(stats.top_series, [])
+        self.assertEqual(stats.top_rarities, [])
+        self.assertEqual(len(stats.daily_counts), 14)
+        self.assertTrue(all(count == 0 for _, count in stats.daily_counts))
+
+    def test_success_rate(self):
+        records = [
+            GrabRecord(success=True),
+            GrabRecord(success=True),
+            GrabRecord(success=True),
+            GrabRecord(success=False, error_code="429"),
+        ]
+        stats = compute_stats(records)
+        self.assertEqual(stats.total, 4)
+        self.assertEqual(stats.success, 3)
+        self.assertAlmostEqual(stats.success_rate, 0.75)
+
+    def test_top_series_excludes_failures_and_nulls(self):
+        records = [
+            GrabRecord(success=True, series="Vocaloid"),
+            GrabRecord(success=True, series="Vocaloid"),
+            GrabRecord(success=True, series="Touhou"),
+            GrabRecord(success=True, series="Vocaloid"),
+            GrabRecord(success=False, series="Vocaloid"),  # failure: ignored
+            GrabRecord(success=True, series=None),         # null series: ignored
+            GrabRecord(success=True, series="Madoka"),
+            GrabRecord(success=True, series="Touhou"),
+        ]
+        stats = compute_stats(records, top_n=3)
+        self.assertEqual(stats.top_series, [("Vocaloid", 3), ("Touhou", 2), ("Madoka", 1)])
+
+    def test_top_rarities_respects_top_n(self):
+        records = [GrabRecord(success=True, rarity=r) for r in ["C", "C", "U", "R", "SR"]]
+        stats = compute_stats(records, top_n=2)
+        self.assertEqual(stats.top_rarities[0], ("C", 2))
+        self.assertEqual(len(stats.top_rarities), 2)
+
+    def test_daily_counts_buckets_are_in_chronological_order(self):
+        # Pick a fixed "now" so the test is deterministic across timezones.
+        now = int(datetime(2026, 5, 14, 12, 0, 0).timestamp())
+        one_day = 86_400
+        records = [
+            GrabRecord(ts=now, success=True),                # today
+            GrabRecord(ts=now - one_day, success=True),      # yesterday
+            GrabRecord(ts=now - one_day, success=False),     # yesterday (failure also counted in daily)
+            GrabRecord(ts=now - 5 * one_day, success=True),  # 5 days ago
+        ]
+        stats = compute_stats(records, days=7, now_ts=now)
+        self.assertEqual(len(stats.daily_counts), 7)
+        # Oldest first.
+        starts = [b for b, _ in stats.daily_counts]
+        self.assertEqual(starts, sorted(starts))
+        counts = [c for _, c in stats.daily_counts]
+        # today=1, yesterday=2, day-5=1, the rest 0.
+        self.assertEqual(counts[-1], 1)   # today
+        self.assertEqual(counts[-2], 2)   # yesterday
+        self.assertEqual(counts[-6], 1)   # 5 days ago
+        self.assertEqual(sum(counts), 4)
+
+    def test_daily_counts_drops_grabs_outside_window(self):
+        now = int(datetime(2026, 5, 14, 12, 0, 0).timestamp())
+        records = [
+            GrabRecord(ts=now, success=True),
+            GrabRecord(ts=now - 365 * 86_400, success=True),  # ancient, ignored by daily
+        ]
+        stats = compute_stats(records, days=14, now_ts=now)
+        self.assertEqual(sum(c for _, c in stats.daily_counts), 1)
+        # But total still reflects every record.
+        self.assertEqual(stats.total, 2)
 
 
 if __name__ == "__main__":

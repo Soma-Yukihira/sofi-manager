@@ -13,9 +13,11 @@ import os
 import sqlite3
 import sys
 import time
-from collections.abc import Iterator
+from collections import Counter
+from collections.abc import Iterable, Iterator
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 _SCHEMA = """
@@ -168,3 +170,72 @@ def iter_grabs(
     with closing(_connect(resolved)) as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     return iter([_row_to_record(r) for r in rows])
+
+
+# ---------------------------------------------------------------------------
+# Aggregations (pure functions over an iterable of GrabRecord)
+# Kept here rather than in the GUI module so they're trivially unit-testable.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True, frozen=True)
+class Stats:
+    total: int
+    success: int
+    success_rate: float  # 0.0 to 1.0; 0.0 for empty datasets
+    top_series: list[tuple[str, int]]
+    top_rarities: list[tuple[str, int]]
+    daily_counts: list[tuple[int, int]]  # (day_start_unix, total_count); oldest first
+
+
+def _day_bucket(ts: int) -> int:
+    """Local-midnight unix timestamp of the day containing ts."""
+    d = datetime.fromtimestamp(ts).replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(d.timestamp())
+
+
+def compute_stats(
+    records: Iterable[GrabRecord],
+    *,
+    top_n: int = 3,
+    days: int = 14,
+    now_ts: int | None = None,
+) -> Stats:
+    """Crunch a list of grabs into the dashboard summary.
+
+    `daily_counts` always contains exactly `days` entries, oldest first,
+    so the chart renderer can iterate without worrying about gaps.
+    """
+    items = list(records)
+    total = len(items)
+    success = sum(1 for r in items if r.success)
+    rate = (success / total) if total else 0.0
+
+    series = Counter(
+        r.series for r in items
+        if r.success and r.series
+    )
+    rarities = Counter(
+        r.rarity for r in items
+        if r.success and r.rarity
+    )
+
+    now = int(now_ts if now_ts is not None else time.time())
+    today_start = _day_bucket(now)
+    one_day = 86_400
+    bucket_starts = [today_start - one_day * (days - 1 - i) for i in range(days)]
+    by_bucket: Counter[int] = Counter()
+    for r in items:
+        bucket = _day_bucket(r.ts)
+        if bucket >= bucket_starts[0]:
+            by_bucket[bucket] += 1
+    daily = [(b, by_bucket.get(b, 0)) for b in bucket_starts]
+
+    return Stats(
+        total=total,
+        success=success,
+        success_rate=rate,
+        top_series=series.most_common(top_n),
+        top_rarities=rarities.most_common(top_n),
+        daily_counts=daily,
+    )
