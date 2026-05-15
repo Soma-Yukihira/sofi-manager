@@ -77,6 +77,15 @@ The auto-updater stays silent on three developer-only git states.
 The manual check button in the menu (`↻ MAJ`) is what surfaces them.
 For the end-user paths (gold / amber banners), see [Updating](Updating).
 
+### Amber banner: *Installation .exe — MAJ auto désactivées*
+
+You're running a PyInstaller `.exe` build. The updater can't atomically
+swap the bundled executable's source files while it's running, so it
+stays out of the way. To update: download a fresh source clone and
+rebuild with `python tools/build.py`, then replace the old
+`dist/SelfbotManager/` folder. Your `bots.json`, `settings.json`, and
+`grabs.db` live in the same folder and aren't touched by the rebuild.
+
 ### Manual check stays silent (on a feature branch)
 
 The updater refuses to touch a tree that isn't on `main`. Switch back:

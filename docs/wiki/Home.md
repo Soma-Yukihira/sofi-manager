@@ -11,13 +11,14 @@ Welcome. This wiki is the long-form companion to the
 
 ## Where to start
 
-| If you are…              | Read first                            |
-| ------------------------ | ------------------------------------- |
-| Installing for the first time | [Installation](Installation)     |
-| Tweaking a running bot   | [Configuration](Configuration)        |
-| Customizing the look     | [Theming](Theming)                    |
-| Debugging a missed drop  | [Troubleshooting](Troubleshooting)    |
-| Forking or extending     | [Architecture](Architecture)          |
+| If you are…                       | Read first                            |
+| --------------------------------- | ------------------------------------- |
+| Installing for the first time     | [Installation](Installation)          |
+| Tweaking a running bot            | [Configuration](Configuration)        |
+| Reviewing grab history / exports  | [Stats](Stats)                        |
+| Customizing the look              | [Theming](Theming)                    |
+| Debugging a missed drop           | [Troubleshooting](Troubleshooting)    |
+| Forking or extending              | [Architecture](Architecture)          |
 
 ## What this project is — and isn't
 
