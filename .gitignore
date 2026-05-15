@@ -31,6 +31,10 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
 # PyInstaller build artifacts (selfbot-manager.spec itself IS tracked)
 *.manifest
