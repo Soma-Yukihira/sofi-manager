@@ -25,15 +25,27 @@ already provide.
 
 from __future__ import annotations
 
+import io
+import json as _json
 import os
+import shutil
 import subprocess
 import sys
 import threading
+import urllib.error
+import urllib.request
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
 SkipReason = Literal["frozen", "no-git", "off-main", "dirty", "ahead"]
+
+_OWNER_REPO = "Soma-Yukihira/sofi-manager"
+_GITHUB_API_LATEST_SHA = f"https://api.github.com/repos/{_OWNER_REPO}/commits/main"
+_CODELOAD_ZIP_URL = f"https://codeload.github.com/{_OWNER_REPO}/zip/refs/heads/main"
+_USER_AGENT = "sofi-manager-updater"
+_NETWORK_TIMEOUT = 30  # seconds
 
 ROOT = Path(__file__).resolve().parent
 
@@ -255,3 +267,152 @@ def apply_and_restart() -> tuple[bool, str]:
         return False, msg
     _restart()
     return True, "Restarting..."  # unreachable
+
+
+# ----------------------------------------------------------------------
+# ZIP-fallback updater (UPD-ZIP)
+# ----------------------------------------------------------------------
+#
+# Users who downloaded the source as a ZIP from GitHub have no `.git/` and
+# would otherwise never auto-update. We bypass git entirely:
+#   1. Poll the GitHub API for the current SHA of refs/heads/main.
+#   2. Compare against the SHA we last installed (stored in settings.json).
+#      First launch with no stored SHA = adopt remote as baseline, no banner.
+#   3. On restart, download the codeload ZIP, overwrite tracked files in
+#      place. User-data files (bots.json, settings.json, grabs.db, key)
+#      are gitignored, therefore absent from the ZIP, therefore untouched.
+#
+# Overwrite-only: files removed upstream linger as orphans. Acceptable for
+# rare renames; the live code path is what the new ZIP defines.
+#
+# Frozen (.exe) installs are deliberately NOT supported here - the running
+# binary is locked on Windows and unpacking source over a PyInstaller
+# install would not change what executes. They keep the amber banner.
+
+
+def _http_get_json(url: str) -> object:
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": _USER_AGENT, "Accept": "application/vnd.github+json"},
+    )
+    with urllib.request.urlopen(req, timeout=_NETWORK_TIMEOUT) as resp:
+        return _json.loads(resp.read().decode("utf-8"))
+
+
+def _http_get_bytes(url: str) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(req, timeout=_NETWORK_TIMEOUT) as resp:
+        return bytes(resp.read())
+
+
+def fetch_remote_main_sha() -> str | None:
+    """GET the SHA of the latest commit on origin/main, or None on failure.
+
+    Failures are silent on purpose: a flaky network or GitHub API rate limit
+    must never crash the GUI launch path.
+    """
+    try:
+        data = _http_get_json(_GITHUB_API_LATEST_SHA)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    sha = data.get("sha")
+    if isinstance(sha, str) and len(sha) == 40 and all(c in "0123456789abcdef" for c in sha):
+        return sha
+    return None
+
+
+def _apply_zip_bytes(zip_bytes: bytes, dest: Path) -> tuple[bool, str]:
+    """Extract a codeload ZIP onto `dest`, stripping the top-level prefix.
+
+    Pure helper, no network. Guards against zip-slip (entries that resolve
+    outside `dest`) and unexpected layouts (mixed top-level dirs).
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            names = zf.namelist()
+            if not names:
+                return False, "empty zip"
+            # codeload ZIPs always wrap content in a single `<repo>-<sha>/`
+            # directory; strip it so files land directly in `dest`.
+            prefix = names[0].split("/", 1)[0] + "/"
+            for n in names:
+                if not n.startswith(prefix):
+                    return False, "unexpected zip layout"
+            dest_resolved = dest.resolve()
+            for info in zf.infolist():
+                rel = info.filename[len(prefix) :]
+                if not rel:
+                    continue
+                target = (dest / rel).resolve()
+                try:
+                    target.relative_to(dest_resolved)
+                except ValueError:
+                    return False, f"zip-slip blocked: {info.filename}"
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, open(target, "wb") as out:
+                    shutil.copyfileobj(src, out)
+    except (zipfile.BadZipFile, OSError) as e:
+        return False, str(e)
+    return True, "OK"
+
+
+def apply_zip_update() -> tuple[bool, str, str | None]:
+    """Fetch + extract the latest main ZIP onto this install. Returns
+    `(ok, message, new_sha)`. Callers are expected to persist `new_sha`
+    before re-execing the interpreter so the next launch knows the
+    baseline.
+    """
+    if skip_reason() != "no-git":
+        return False, "ZIP update only applies to non-git installs.", None
+    new_sha = fetch_remote_main_sha()
+    if new_sha is None:
+        return False, "Impossible de joindre l'API GitHub.", None
+    try:
+        zip_bytes = _http_get_bytes(_CODELOAD_ZIP_URL)
+    except (urllib.error.URLError, OSError) as e:
+        return False, f"Telechargement echoue: {e}", None
+    ok, msg = _apply_zip_bytes(zip_bytes, ROOT)
+    if not ok:
+        return False, msg, None
+    return True, "OK", new_sha
+
+
+def check_zip_in_background(
+    installed_sha: str | None,
+    on_baseline: Callable[[str], None],
+    on_update_available: Callable[[str], None],
+) -> None:
+    """Fire-and-forget ZIP-mode check. No-op outside the no-git case.
+
+    Three outcomes:
+      - installed_sha is None  -> `on_baseline(remote)` (first launch).
+      - installed_sha == remote -> silent (up to date).
+      - otherwise               -> `on_update_available(remote)`.
+
+    Callbacks fire on the worker thread; the caller is responsible for
+    marshalling to Tk via `root.after(0, ...)`.
+    """
+    if skip_reason() != "no-git":
+        return
+
+    def _worker() -> None:
+        try:
+            remote = fetch_remote_main_sha()
+            if remote is None:
+                return
+            if installed_sha is None:
+                on_baseline(remote)
+            elif installed_sha != remote:
+                on_update_available(remote)
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_worker, name="updater-zip", daemon=True)
+    t.start()

@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import customtkinter as ctk
 
@@ -348,6 +348,14 @@ class SelfbotManagerApp(ctk.CTk):
         self.selected_id: str | None = None
         self.cfg_widgets: dict[str, Any] = {}
 
+        # Update banner state. `_update_mode` is "git" for clones (fast-forward
+        # pull) or "zip" for ZIP installs (download + overwrite). Dictates which
+        # apply path the Restart button takes. `_pending_zip_sha` is the SHA the
+        # ZIP banner is offering — persisted to settings.json post-apply so the
+        # next launch knows the new baseline.
+        self._update_mode: Literal["git", "zip"] | None = None
+        self._pending_zip_sha: str | None = None
+
         self._apply_appearance()
         self._build_layout()
         self._load_existing_bots()
@@ -359,8 +367,18 @@ class SelfbotManagerApp(ctk.CTk):
         # The callback marshals back to the Tk thread via `self.after`.
         updater.check_in_background(lambda n: self.after(0, self._show_update_banner, n))
 
-        # Surface a passive amber banner for .exe / ZIP users whose installs
-        # will never auto-update. Deferred so the layout is settled first.
+        # ZIP-mode users (no .git/) get a parallel check that polls the
+        # GitHub API for the latest main SHA. The skip_reason gate inside
+        # `check_zip_in_background` no-ops on git / frozen installs.
+        updater.check_zip_in_background(
+            installed_sha=self.settings.get("zip_install_sha"),
+            on_baseline=lambda sha: self.after(0, self._on_zip_baseline_established, sha),
+            on_update_available=lambda sha: self.after(0, self._on_zip_update_available, sha),
+        )
+
+        # Frozen .exe installs still need a passive amber banner: we can't
+        # atomically swap source files into a running PyInstaller bundle,
+        # so the user has to rebuild. Deferred so the layout is settled.
         self.after(0, self._maybe_show_skip_reason_banner)
 
     # ---------- thème ----------
@@ -591,6 +609,8 @@ class SelfbotManagerApp(ctk.CTk):
         self.update_banner.grid_remove()
 
     def _show_update_banner(self, behind: int) -> None:
+        self._update_mode = "git"
+        self._pending_zip_sha = None
         msg = (
             f"  Mise a jour disponible  -  {behind} commit"
             f"{'s' if behind > 1 else ''} en attente. Redemarrez pour appliquer."
@@ -604,9 +624,44 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
+    def _show_zip_update_banner(self, sha: str) -> None:
+        """Variant of the gold banner for ZIP installs. Same look, but the
+        Restart button kicks off a codeload download + in-place overwrite
+        instead of a git fast-forward."""
+        self._update_mode = "zip"
+        self._pending_zip_sha = sha
+        msg = (
+            f"  Mise a jour disponible (mode ZIP) - commit {sha[:7]}. "
+            "Redemarrez pour telecharger et appliquer."
+        )
+        try:
+            self.update_banner_label.configure(text=msg)
+            self.update_banner.grid()
+            if hasattr(self, "skip_banner"):
+                self.skip_banner.grid_remove()
+        except Exception:
+            pass
+
+    def _on_zip_baseline_established(self, sha: str) -> None:
+        """First launch on a fresh ZIP install: record the current upstream
+        SHA as the baseline. Subsequent launches will compare against it.
+        Silent - no banner, since we just adopted whatever the user already
+        has as "in sync"."""
+        if self.settings.get("zip_install_sha") == sha:
+            return
+        self.settings["zip_install_sha"] = sha
+        try:
+            save_settings(self.settings)
+        except Exception:
+            pass
+
+    def _on_zip_update_available(self, sha: str) -> None:
+        self._show_zip_update_banner(sha)
+
     def _check_updates_now(self) -> None:
-        """Manual update check - same fetch as the background poller, but
-        always gives feedback (banner if behind, messagebox otherwise)."""
+        """Manual update check - mirrors the background poller's logic for
+        whichever install mode applies, always with explicit feedback
+        (banner if behind, messagebox otherwise)."""
         btn = getattr(self, "check_updates_btn", None)
         if btn is not None:
             try:
@@ -614,9 +669,21 @@ class SelfbotManagerApp(ctk.CTk):
             except Exception:
                 pass
 
+        zip_mode = updater.skip_reason() == "no-git"
+        installed_sha = self.settings.get("zip_install_sha") if zip_mode else None
+
         def _worker() -> None:
             try:
-                result = updater.fetch_and_status()
+                if zip_mode:
+                    remote = updater.fetch_remote_main_sha()
+                    if remote is None:
+                        result: dict[str, Any] = {"state": "fetch_failed", "behind": 0}
+                    elif installed_sha is None or installed_sha == remote:
+                        result = {"state": "uptodate", "behind": 0, "sha": remote}
+                    else:
+                        result = {"state": "available_zip", "behind": 0, "sha": remote}
+                else:
+                    result = updater.fetch_and_status()
             except Exception as e:
                 result = {"state": "error", "behind": 0, "err": str(e)}
             self.after(0, self._on_check_updates_result, result)
@@ -636,11 +703,30 @@ class SelfbotManagerApp(ctk.CTk):
         if state == "available" and n > 0:
             self._show_update_banner(n)
             return
+        if state == "available_zip":
+            sha = result.get("sha")
+            if isinstance(sha, str):
+                # On ZIP installs with no recorded baseline, this can fire on
+                # the very first manual check; treat it the same as if the
+                # background path had detected drift.
+                if self.settings.get("zip_install_sha") is None:
+                    self.settings["zip_install_sha"] = sha
+                    try:
+                        save_settings(self.settings)
+                    except Exception:
+                        pass
+                    messagebox.showinfo("Mise a jour", "Vous etes a jour.")
+                    return
+                self._show_zip_update_banner(sha)
+                return
 
         messages = {
             "uptodate": ("Mise a jour", "Vous etes a jour."),
             "not_git": ("Mise a jour", "Installation sans .git : MAJ automatique desactivee."),
-            "fetch_failed": ("Mise a jour", "Echec du fetch (hors-ligne ou git absent du PATH)."),
+            "fetch_failed": (
+                "Mise a jour",
+                "Echec du fetch (hors-ligne, git absent ou API GitHub injoignable).",
+            ),
             "dirty": ("Mise a jour", "Modifications locales en cours : commit ou stash requis."),
             "ahead": (
                 "Mise a jour",
@@ -667,14 +753,13 @@ class SelfbotManagerApp(ctk.CTk):
     # Reasons that warrant a passive banner. Dev cases ("off-main", "dirty",
     # "ahead") are intentionally excluded: devs are already aware, and
     # `_check_updates_now` surfaces them on demand.
+    # `no-git` is intentionally absent: ZIP installs are now handled by
+    # the codeload fallback (`updater.apply_zip_update`). Only the frozen
+    # case is structurally un-updatable and keeps the passive banner.
     _SKIP_BANNER_REASONS: ClassVar[dict[str, str]] = {
         "frozen": (
             "  Installation .exe : les mises a jour automatiques sont desactivees. "
             "Telechargez la derniere version pour rester a jour."
-        ),
-        "no-git": (
-            "  Installation sans .git : les mises a jour automatiques sont desactivees. "
-            "Re-clonez le depot pour activer les MAJ."
         ),
     }
 
@@ -770,14 +855,32 @@ class SelfbotManagerApp(ctk.CTk):
         self._persist()
         save_settings(self.settings)
 
-        def _do_restart() -> None:
+        def _do_git_restart() -> None:
             ok, msg = updater.apply_and_restart()
             if not ok:
-                # Pull failed - surface it instead of silently doing nothing.
                 messagebox.showerror("Mise a jour", msg)
 
+        def _do_zip_restart() -> None:
+            # Network + extract can take seconds; run off the Tk thread.
+            def _worker() -> None:
+                ok, msg, new_sha = updater.apply_zip_update()
+                if not ok or new_sha is None:
+                    self.after(0, lambda: messagebox.showerror("Mise a jour", msg))
+                    return
+                # Record the new baseline BEFORE re-exec so the next launch
+                # doesn't immediately re-prompt for the same update.
+                self.settings["zip_install_sha"] = new_sha
+                try:
+                    save_settings(self.settings)
+                except Exception:
+                    pass
+                updater._restart()
+
+            threading.Thread(target=_worker, name="updater-zip-apply", daemon=True).start()
+
+        finalize = _do_zip_restart if self._update_mode == "zip" else _do_git_restart
         # Stop bots off the Tk thread so the banner doesn't freeze before re-exec.
-        self._stop_all_async(then=_do_restart)
+        self._stop_all_async(then=finalize)
 
     def _build_main_panel(self) -> None:
         T = self.theme
