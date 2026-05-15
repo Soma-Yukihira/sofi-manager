@@ -97,12 +97,17 @@ l'app applique `git pull --ff-only`, relance Python, et le nouveau code
 tourne. Pas de fichier de release, pas d'étape manuelle — chaque commit
 sur `main` est une release.
 
-L'auto-updater reste discret :
-- Désactivé quand `.git/` est absent (ZIP / installs `.exe`).
-- Désactivé si tu as des commits locaux en avance sur `origin/main` ou
-  des modifications non commitées sur des fichiers suivis.
-- `bots.json` et `settings.json` sont gitignorés, ils survivent à
-  chaque update intacts.
+L'auto-updater s'adapte à ton install :
+- **Clone git** — `git pull --ff-only origin main` puis re-exec.
+- **Téléchargement ZIP** (pas de `.git/`) — récupère `main` depuis
+  `codeload.github.com` et écrase les fichiers suivis en place. Même
+  bandeau, même flux de redémarrage.
+- **`.exe` gelé** — désactivé ; un bandeau ambre passif renvoie vers
+  un rebuild depuis un clone frais.
+- Également désactivé sur une branche autre que `main`, avec des
+  commits locaux en avance, ou des fichiers suivis modifiés.
+- `bots.json`, `settings.json` et `grabs.db` sont gitignorés — ils
+  survivent à chaque update intacts.
 
 **Update manuel** (résumé verbeux en CLI, utile aussi sur VPS) :
 

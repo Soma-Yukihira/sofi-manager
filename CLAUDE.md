@@ -26,10 +26,12 @@ Every commit on `main` is what users run.
 - **`tools/update.py`** stays as a verbose CLI alternative (useful on a
   VPS or for debugging the same operation).
 
-The auto-updater is intentionally conservative: skipped if `.git/` is
-missing (ZIP / `.exe` installs), if the branch is not `main`, if there
-are local commits ahead of `origin/main`, or if tracked files have
-uncommitted modifications.
+The auto-updater is intentionally conservative. Three install shapes:
+git clone (fast-forward pull), ZIP (codeload fallback overwrites
+tracked files), frozen `.exe` (amber banner, rebuild required). The
+git path additionally skips on a non-`main` branch, local commits
+ahead of `origin/main`, or uncommitted tracked-file modifications —
+the on-demand check in the menu covers those developer cases.
 
 ## Hard rules — never commit
 

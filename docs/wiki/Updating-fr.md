@@ -25,16 +25,18 @@ Clic sur **Redémarrer** et l'app :
 `bots.json` et `settings.json` sont gitignorés, donc jamais touchés par
 le pull.
 
-## Garde-fous
+## Garde-fous (chemin git-pull)
 
-L'updater **refuse de toucher l'arbre** dans tous ces cas :
+Le chemin git-pull **refuse de toucher l'arbre** quand :
 
-- `.git/` est absent (install par ZIP ou `.exe` distribué).
 - La branche courante n'est pas `main`.
 - Tu as des commits locaux en avance sur `origin/main`.
 - Des fichiers suivis ont des modifications non commitées.
 
-Dans tous ces cas, le bandeau n'apparaît simplement pas.
+Dans ces cas, aucun bandeau n'apparaît — ce sont des états dev, le
+check à la demande dans le menu les remonte quand il le faut. Les cas
+`.git/`-absent et `.exe` gelé suivent leurs propres chemins,
+ci-dessous.
 
 ## Alternative CLI
 
@@ -48,8 +50,20 @@ Rafraîchit les dépendances pip si `requirements.txt` a changé et
 imprime un résumé propre. Pratique sur un VPS, dans `tmux`, ou comme
 fallback quand la GUI ne peut pas accéder au réseau.
 
-## Utilisateurs ZIP / `.exe`
+## Installs ZIP (pas de `.git/`)
 
-Ces installs n'ont pas de `.git/`, donc l'auto-updater est inerte. Pour
-une nouvelle version, re-télécharge les sources (ou recompile
-l'exécutable depuis un clone frais via `python tools/build.py`).
+L'updater bascule sur un chemin codeload. Il récupère le SHA `main`
+courant depuis `api.github.com`, télécharge le ZIP correspondant
+depuis `codeload.github.com`, et écrase les fichiers suivis en place
+(garde zip-slip, baseline SHA persistée en `zip_install_sha` dans
+`settings.json`). Le bandeau doré et le flux de redémarrage sont
+identiques au chemin git. Les fichiers gitignorés (`bots.json`,
+`settings.json`, `grabs.db`) survivent intacts.
+
+## `.exe` gelé
+
+Les bundles PyInstaller ne peuvent pas swap atomiquement leurs propres
+fichiers sources à l'exécution, donc l'updater court-circuite avec le
+skip reason `frozen` et la GUI affiche un bandeau ambre passif.
+Action : recompile depuis un clone frais via `python tools/build.py`,
+ou bascule sur une install source.

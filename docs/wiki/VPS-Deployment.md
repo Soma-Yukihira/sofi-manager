@@ -127,13 +127,14 @@ Three ways, pick one:
 ## Updating
 
 ```bash
-./tools/update.sh
+./env/bin/python tools/update.py
 sudo systemctl restart sofi-manager   # if running as a service
 ```
 
-The script `git pull`s, refreshes `pip` deps if `requirements.txt`
-changed, and reminds you to restart the service if it detects the unit
-running. See [Updating](Updating) for full details.
+The CLI `git pull`s, refreshes `pip` deps if `requirements.txt`
+changed, and prints a clean diff summary. See [Updating](Updating)
+for the full update model (in-app GUI updater + codeload fallback for
+ZIP installs).
 
 ## Resource usage
 
