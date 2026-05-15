@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import io
 import subprocess
+import tempfile
 import threading
 import unittest
+import zipfile
+from pathlib import Path
 from unittest.mock import patch
 
 import updater
@@ -567,6 +571,258 @@ class GitInvocation(unittest.TestCase):
         self.assertTrue(captured["kwargs"]["text"])
         # creationflags must be present (0 on POSIX, CREATE_NO_WINDOW on Windows)
         self.assertIn("creationflags", captured["kwargs"])
+
+
+def _make_codeload_zip(
+    sha: str = "deadbeef" * 5,
+    files: dict[str, bytes] | None = None,
+) -> bytes:
+    """Build an in-memory ZIP mimicking the codeload layout.
+
+    Real codeload zips wrap content in a single `<repo>-<full-sha>/` dir;
+    `_apply_zip_bytes` is supposed to strip that prefix transparently.
+    """
+    if files is None:
+        files = {"README.md": b"# new", "gui.py": b"print('new gui')\n"}
+    buf = io.BytesIO()
+    prefix = f"sofi-manager-{sha}/"
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(prefix, b"")  # directory entry
+        for name, content in files.items():
+            zf.writestr(prefix + name, content)
+    return buf.getvalue()
+
+
+class ApplyZipBytes(unittest.TestCase):
+    """Pure extract+overwrite helper. Network-free."""
+
+    def test_strips_top_level_prefix_and_writes_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            ok, msg = updater._apply_zip_bytes(
+                _make_codeload_zip(files={"a.py": b"A", "sub/b.py": b"B"}),
+                dest,
+            )
+            self.assertTrue(ok, msg)
+            # Files land directly in dest, NOT under sofi-manager-<sha>/ -
+            # the wrapping directory is the codeload artifact, not part
+            # of the repo, so the entire install would shift one level deep
+            # if we forgot to strip it.
+            self.assertEqual((dest / "a.py").read_bytes(), b"A")
+            self.assertEqual((dest / "sub" / "b.py").read_bytes(), b"B")
+            self.assertFalse(
+                (dest / "sofi-manager-deadbeefdeadbeefdeadbeefdeadbeefdeadbeef").exists()
+            )
+
+    def test_overwrites_existing_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            (dest / "gui.py").write_bytes(b"OLD")
+            updater._apply_zip_bytes(
+                _make_codeload_zip(files={"gui.py": b"NEW"}),
+                dest,
+            )
+            self.assertEqual((dest / "gui.py").read_bytes(), b"NEW")
+
+    def test_preserves_unrelated_user_files(self):
+        # User-data files (bots.json, settings.json) live under gitignore so
+        # they are NEVER in a codeload zip. The applier must leave them alone.
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            (dest / "bots.json").write_bytes(b"USER_DATA")
+            (dest / "settings.json").write_bytes(b"USER_SETTINGS")
+            updater._apply_zip_bytes(
+                _make_codeload_zip(files={"gui.py": b"NEW"}),
+                dest,
+            )
+            self.assertEqual((dest / "bots.json").read_bytes(), b"USER_DATA")
+            self.assertEqual((dest / "settings.json").read_bytes(), b"USER_SETTINGS")
+
+    def test_creates_nested_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            updater._apply_zip_bytes(
+                _make_codeload_zip(files={"tools/build.py": b"build", "tests/t.py": b"t"}),
+                dest,
+            )
+            self.assertEqual((dest / "tools" / "build.py").read_bytes(), b"build")
+            self.assertEqual((dest / "tests" / "t.py").read_bytes(), b"t")
+
+    def test_rejects_zip_slip(self):
+        # A malicious zip with a `..` path must not escape the dest dir.
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("sofi-manager-abc/", b"")
+            zf.writestr("sofi-manager-abc/../escape.py", b"pwn")
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, msg = updater._apply_zip_bytes(buf.getvalue(), Path(tmp))
+        self.assertFalse(ok)
+        self.assertIn("zip-slip", msg.lower())
+
+    def test_rejects_empty_zip(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w"):
+            pass
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, msg = updater._apply_zip_bytes(buf.getvalue(), Path(tmp))
+        self.assertFalse(ok)
+        self.assertEqual(msg, "empty zip")
+
+    def test_rejects_unexpected_layout(self):
+        # codeload always wraps in a single top-level dir. Multiple top-level
+        # entries means we got something other than what we asked for.
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("dir1/file.py", b"a")
+            zf.writestr("dir2/file.py", b"b")
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, msg = updater._apply_zip_bytes(buf.getvalue(), Path(tmp))
+        self.assertFalse(ok)
+        self.assertEqual(msg, "unexpected zip layout")
+
+    def test_rejects_bad_zip_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, _msg = updater._apply_zip_bytes(b"not a zip", Path(tmp))
+        self.assertFalse(ok)
+
+
+class FetchRemoteMainSha(unittest.TestCase):
+    def test_returns_sha_from_api_json(self):
+        with patch.object(updater, "_http_get_json", return_value={"sha": "a" * 40, "commit": {}}):
+            self.assertEqual(updater.fetch_remote_main_sha(), "a" * 40)
+
+    def test_returns_none_on_network_error(self):
+        import urllib.error
+
+        with patch.object(updater, "_http_get_json", side_effect=urllib.error.URLError("dns")):
+            self.assertIsNone(updater.fetch_remote_main_sha())
+
+    def test_returns_none_on_non_dict_payload(self):
+        # GitHub returns an error object as a dict, but a defensive non-dict
+        # (list / null / string) must not crash us.
+        with patch.object(updater, "_http_get_json", return_value=["unexpected"]):
+            self.assertIsNone(updater.fetch_remote_main_sha())
+
+    def test_returns_none_on_missing_sha_field(self):
+        with patch.object(updater, "_http_get_json", return_value={"message": "Not Found"}):
+            self.assertIsNone(updater.fetch_remote_main_sha())
+
+    def test_rejects_non_40_char_sha(self):
+        with patch.object(updater, "_http_get_json", return_value={"sha": "abc123"}):
+            self.assertIsNone(updater.fetch_remote_main_sha())
+
+    def test_rejects_non_hex_sha(self):
+        with patch.object(updater, "_http_get_json", return_value={"sha": "z" * 40}):
+            self.assertIsNone(updater.fetch_remote_main_sha())
+
+
+class ApplyZipUpdate(unittest.TestCase):
+    def test_refuses_when_not_no_git_install(self):
+        with patch.object(updater, "skip_reason", return_value=None):
+            ok, msg, sha = updater.apply_zip_update()
+        self.assertFalse(ok)
+        self.assertIsNone(sha)
+        self.assertIn("non-git", msg.lower())
+
+    def test_returns_failure_when_sha_fetch_fails(self):
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_sha", return_value=None),
+        ):
+            ok, _msg, sha = updater.apply_zip_update()
+        self.assertFalse(ok)
+        self.assertIsNone(sha)
+
+    def test_returns_failure_when_download_fails(self):
+        import urllib.error
+
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_sha", return_value="a" * 40),
+            patch.object(updater, "_http_get_bytes", side_effect=urllib.error.URLError("net")),
+        ):
+            ok, _msg, sha = updater.apply_zip_update()
+        self.assertFalse(ok)
+        self.assertIsNone(sha)
+
+    def test_happy_path_returns_new_sha(self):
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_sha", return_value="b" * 40),
+            patch.object(updater, "_http_get_bytes", return_value=_make_codeload_zip()),
+            patch.object(updater, "_apply_zip_bytes", return_value=(True, "OK")),
+        ):
+            ok, msg, sha = updater.apply_zip_update()
+        self.assertTrue(ok)
+        self.assertEqual(msg, "OK")
+        self.assertEqual(sha, "b" * 40)
+
+
+class CheckZipInBackground(unittest.TestCase):
+    def _inline_thread(self):
+        class _InlineThread:
+            def __init__(self, target, name=None, daemon=None):
+                self._t = target
+
+            def start(self):
+                self._t()
+
+        return patch.object(threading, "Thread", _InlineThread)
+
+    def test_noop_outside_no_git(self):
+        # Git clones use the git fetch path, not this one.
+        with (
+            patch.object(updater, "skip_reason", return_value=None),
+            patch.object(threading, "Thread") as mock_thread,
+        ):
+            updater.check_zip_in_background(None, lambda _s: None, lambda _s: None)
+        mock_thread.assert_not_called()
+
+    def test_calls_on_baseline_when_no_installed_sha(self):
+        # First launch on a fresh ZIP install: no recorded SHA -> adopt
+        # whatever upstream reports as the baseline, silently.
+        seen: list[str] = []
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_sha", return_value="c" * 40),
+            self._inline_thread(),
+        ):
+            updater.check_zip_in_background(None, seen.append, lambda _s: None)
+        self.assertEqual(seen, ["c" * 40])
+
+    def test_calls_on_update_when_sha_differs(self):
+        seen: list[str] = []
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_sha", return_value="d" * 40),
+            self._inline_thread(),
+        ):
+            updater.check_zip_in_background("e" * 40, lambda _s: None, seen.append)
+        self.assertEqual(seen, ["d" * 40])
+
+    def test_silent_when_sha_matches(self):
+        baseline: list[str] = []
+        available: list[str] = []
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_sha", return_value="f" * 40),
+            self._inline_thread(),
+        ):
+            updater.check_zip_in_background("f" * 40, baseline.append, available.append)
+        self.assertEqual(baseline, [])
+        self.assertEqual(available, [])
+
+    def test_silent_when_sha_fetch_fails(self):
+        baseline: list[str] = []
+        available: list[str] = []
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_sha", return_value=None),
+            self._inline_thread(),
+        ):
+            updater.check_zip_in_background(None, baseline.append, available.append)
+        self.assertEqual(baseline, [])
+        self.assertEqual(available, [])
 
 
 if __name__ == "__main__":
