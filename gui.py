@@ -24,6 +24,8 @@ import storage
 import updater
 from bot_core import SelfBot, default_config, sanitize_config
 from crypto import decrypt_token, encrypt_token
+from paths import bundle_dir as _bundle_dir
+from paths import user_dir as _user_dir
 
 WIKI_UPDATING_URL = "https://github.com/Soma-Yukihira/sofi-manager/wiki/Updating-fr"
 
@@ -31,24 +33,9 @@ WIKI_UPDATING_URL = "https://github.com/Soma-Yukihira/sofi-manager/wiki/Updating
 # PyInstaller-safe paths
 # =============================================
 #
-# Two distinct roots:
-#   - BUNDLE_DIR : read-only resources (assets/). Inside the PyInstaller
-#     bundle when frozen (sys._MEIPASS), otherwise next to the source.
-#   - USER_DIR   : mutable state (bots.json, settings.json). Always next
-#     to the exe / source so the user can edit/back up these files.
-
-
-def _bundle_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-    return Path(__file__).resolve().parent
-
-
-def _user_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
-
+# Resolved via `paths.py` so storage.py and cli.py share the same
+# resolution logic. BUNDLE_DIR is read-only resources (assets/), USER_DIR
+# is mutable state (bots.json, settings.json, grabs.db).
 
 BUNDLE_DIR = _bundle_dir()
 USER_DIR = _user_dir()
@@ -356,6 +343,11 @@ class SelfbotManagerApp(ctk.CTk):
         self._update_mode: Literal["git", "zip"] | None = None
         self._pending_zip_sha: str | None = None
 
+        # Stash migration outcome here so the banner can be shown once the
+        # layout exists. Migration runs before any DB read/write to keep
+        # SQLite from opening a handle on the legacy path.
+        self._db_migration_result: storage.MigrationResult | None = self._maybe_migrate_db()
+
         self._apply_appearance()
         self._build_layout()
         self._load_existing_bots()
@@ -380,6 +372,11 @@ class SelfbotManagerApp(ctk.CTk):
         # atomically swap source files into a running PyInstaller bundle,
         # so the user has to rebuild. Deferred so the layout is settled.
         self.after(0, self._maybe_show_skip_reason_banner)
+
+        # One-shot banner if `migrate_db` actually moved the legacy DB into
+        # USER_DIR at startup. Deferred for the same reason.
+        if self._db_migration_result is not None and self._db_migration_result.moved:
+            self.after(0, self._show_db_migration_banner)
 
     # ---------- thème ----------
 
@@ -845,6 +842,77 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             messagebox.showinfo("Aide", WIKI_UPDATING_URL)
 
+    # ---------- DB migration banner ----------
+
+    def _maybe_migrate_db(self) -> storage.MigrationResult | None:
+        """Move %APPDATA%/sofi-manager/grabs.db -> USER_DIR/grabs.db once.
+
+        `migrate_db` is itself a safe no-op when there's nothing to move
+        (no legacy file, target already exists, or SOFI_DB_PATH points at
+        the legacy location). Failures are non-fatal: the user keeps their
+        old DB and the next launch retries.
+        """
+        try:
+            return storage.migrate_db(storage.legacy_db_path(), storage.default_db_path())
+        except Exception as e:
+            print(f"[migrate_db] failed: {e}", file=sys.stderr)
+            return None
+
+    def _build_db_migration_banner(self, parent: Any) -> None:
+        """
+        Gold strip above the top bar, hidden by default. Shown once after
+        a successful legacy-DB relocation so the user knows their stats
+        are now travelling with the project folder.
+        """
+        T = self.theme
+        self.db_migration_banner = ctk.CTkFrame(
+            parent,
+            fg_color=T["accent"],
+            corner_radius=0,
+            height=38,
+        )
+        self.db_migration_banner.grid(row=0, column=0, sticky="ew")
+        self.db_migration_banner.grid_propagate(False)
+        self.db_migration_banner.grid_columnconfigure(0, weight=1)
+
+        self.db_migration_banner_label = ctk.CTkLabel(
+            self.db_migration_banner,
+            text=(
+                "  Base de donnees deplacee vers le dossier projet. "
+                "Vos statistiques sont preservees."
+            ),
+            text_color=T["text_on_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.db_migration_banner_label.grid(row=0, column=0, sticky="w", padx=18)
+
+        ctk.CTkButton(
+            self.db_migration_banner,
+            text="OK",
+            command=self._dismiss_db_migration_banner,
+            fg_color="transparent",
+            hover_color=T["accent_bright"],
+            text_color=T["text_on_accent"],
+            border_width=0,
+            width=60,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).grid(row=0, column=1, sticky="e", padx=14, pady=4)
+
+        self.db_migration_banner.grid_remove()
+
+    def _show_db_migration_banner(self) -> None:
+        try:
+            self.db_migration_banner.grid()
+        except Exception:
+            pass
+
+    def _dismiss_db_migration_banner(self) -> None:
+        try:
+            self.db_migration_banner.grid_remove()
+        except Exception:
+            pass
+
     def _on_update_restart(self) -> None:
         # Persist current form/state before re-execing, just like _on_close.
         if self.selected_id:
@@ -893,6 +961,8 @@ class SelfbotManagerApp(ctk.CTk):
         self._build_update_banner(main)
         # --- Skip-reason banner (hidden unless .exe / no-git install) ---
         self._build_skip_reason_banner(main)
+        # --- DB migration banner (one-shot if legacy %APPDATA% DB was moved) ---
+        self._build_db_migration_banner(main)
 
         # --- Top bar ---
         top = ctk.CTkFrame(main, fg_color=T["panel"], corner_radius=0, height=72)

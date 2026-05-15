@@ -107,14 +107,17 @@ les utilisateurs finaux, un spec PyInstaller versionné
 (`selfbot-manager.spec`) bundle le GUI en exécutable Windows autonome
 via `python tools/build.py`.
 
-Deux helpers de chemins runtime dans `gui.py` synchronisent les builds
-source et gelés :
+Deux helpers de chemins runtime dans `paths.py` synchronisent les
+builds source et gelés, et sont importés par `gui.py`, `cli.py` et
+`storage.py` :
 
-- `BUNDLE_DIR` — assets read-only. Vaut `sys._MEIPASS` une fois gelé,
+- `bundle_dir()` — assets read-only. Vaut `sys._MEIPASS` une fois gelé,
   sinon la racine du repo.
-- `USER_DIR` — état mutable (`bots.json`, `settings.json`). Résout
-  toujours vers le dossier contenant le .exe (ou l'arbre source), donc
-  l'utilisateur peut éditer/sauvegarder ces fichiers à côté du binaire.
+- `user_dir()` — état mutable (`bots.json`, `settings.json`,
+  `grabs.db`). Résout toujours vers le dossier contenant le .exe (ou
+  l'arbre source). Une migration one-shot déplace toute `grabs.db`
+  pré-existante depuis `%APPDATA%` / XDG vers `USER_DIR` au premier
+  lancement.
 
 Voir la page wiki [Compilation](Building-fr) pour la structure
 complète et les gotchas PyInstaller.

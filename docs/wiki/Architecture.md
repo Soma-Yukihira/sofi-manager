@@ -106,14 +106,17 @@ The source tree runs as-is with `python main.py`. For end users, a
 checked-in PyInstaller spec (`selfbot-manager.spec`) bundles the GUI
 into a standalone Windows executable via `python tools/build.py`.
 
-Two runtime path helpers in `gui.py` keep the source and frozen builds
-in sync:
+Two runtime path helpers in `paths.py` keep the source and frozen
+builds in sync, and are imported by `gui.py`, `cli.py`, and
+`storage.py`:
 
-- `BUNDLE_DIR` — read-only assets. Equals `sys._MEIPASS` when frozen,
+- `bundle_dir()` — read-only assets. Equals `sys._MEIPASS` when frozen,
   else the repo root.
-- `USER_DIR` — mutable state (`bots.json`, `settings.json`). Always
-  resolves to the folder containing the .exe (or the source tree), so
-  users can edit/back up these files alongside the binary.
+- `user_dir()` — mutable state (`bots.json`, `settings.json`,
+  `grabs.db`). Always resolves to the folder containing the .exe (or
+  the source tree), so users can edit/back up these files alongside the
+  binary. A one-shot migration moves any pre-existing `grabs.db` from
+  the legacy `%APPDATA%` / XDG location into `USER_DIR` on first launch.
 
 See the [Building](Building) wiki page for the full layout and the
 PyInstaller-specific gotchas.

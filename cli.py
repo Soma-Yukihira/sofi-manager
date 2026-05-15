@@ -32,13 +32,11 @@ sys.path.insert(0, str(_HERE))
 
 from bot_core import SelfBot, default_config, sanitize_config  # noqa: E402
 from crypto import decrypt_token, encrypt_token  # noqa: E402
+from paths import user_dir as _user_dir  # noqa: E402
 
-# When frozen by PyInstaller, mutable state lives next to the exe, not
-# inside the temporary _MEIPASS extraction dir.
-if getattr(sys, "frozen", False):
-    USER_DIR = Path(sys.executable).resolve().parent
-else:
-    USER_DIR = _HERE
+# Shared with gui.py via paths.user_dir(): mutable state (bots.json,
+# settings.json, grabs.db) lives next to the exe (frozen) or source (dev).
+USER_DIR = _user_dir()
 
 CONFIG_PATH = USER_DIR / "bots.json"
 

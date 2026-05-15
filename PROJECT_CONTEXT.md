@@ -45,6 +45,7 @@ Per-user state created at first launch (gitignored):
 - `bots.json` — bot tokens + per-bot config (tokens are Fernet-encrypted
   with a key kept in the OS keyring; see [crypto.py](crypto.py))
 - `settings.json` — theme mode + 17-slot color customization
+- `grabs.db` — SQLite history (WAL). Override with `SOFI_DB_PATH`.
 - `Selfbot Manager.lnk` — Windows taskbar shortcut
 
 The encryption key lives in the OS keyring under

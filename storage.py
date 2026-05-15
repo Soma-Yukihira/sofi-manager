@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import os
+import shutil
 import sqlite3
 import sys
 import time
@@ -21,6 +22,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TextIO
+
+from paths import user_dir
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS grabs (
@@ -83,21 +86,79 @@ class GrabRecord:
 
 
 def default_db_path() -> Path:
-    """Résout le chemin par défaut de la DB selon l'OS.
+    """Résout le chemin par défaut de la DB.
 
-    Override possible via la variable d'env SOFI_DB_PATH.
-    Windows : %APPDATA%\\sofi-manager\\grabs.db
-    POSIX   : ~/.local/share/sofi-manager/grabs.db
+    Aligned with bots.json / settings.json: lives next to the exe (frozen)
+    or the source dir (dev). Override via SOFI_DB_PATH for VPS / multi-user
+    setups where the DB must live elsewhere.
     """
     override = os.environ.get("SOFI_DB_PATH")
     if override:
         return Path(override).expanduser()
+    return user_dir() / "grabs.db"
+
+
+def legacy_db_path() -> Path:
+    """Pre-PR-30 path. Used by `migrate_db` to find a pre-existing DB.
+
+    Windows : %APPDATA%\\sofi-manager\\grabs.db
+    POSIX   : $XDG_DATA_HOME/sofi-manager/grabs.db
+              (fallback ~/.local/share/sofi-manager/grabs.db)
+    """
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
         return Path(base) / "sofi-manager" / "grabs.db"
     xdg = os.environ.get("XDG_DATA_HOME")
     base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
     return base / "sofi-manager" / "grabs.db"
+
+
+@dataclass(slots=True, frozen=True)
+class MigrationResult:
+    """Outcome of `migrate_db`. `moved=True` only on a successful relocation."""
+
+    moved: bool
+    reason: str  # "migrated" | "no_source" | "target_exists"
+    files: tuple[Path, ...] = ()  # files actually moved to the new path
+
+
+def migrate_db(old: Path, new: Path) -> MigrationResult:
+    """Move grabs.db (+ wal/shm sidecars) from `old` to `new`.
+
+    Idempotent — after a successful migration `old` no longer exists, so
+    re-running is a no-op. Skips when `new` already exists to avoid
+    clobbering whichever copy is canonical at the new location.
+
+    Caller must ensure no SQLite connection is open against `old` — on
+    Windows, an open handle blocks the rename.
+    """
+    same_path = old.resolve() == new.resolve() if old.exists() and new.exists() else old == new
+    if same_path:
+        # Caller already lives at the legacy path (e.g. SOFI_DB_PATH points
+        # there). Nothing to do — and shutil.move would raise SameFileError.
+        return MigrationResult(moved=False, reason="same_path")
+    if not old.exists():
+        return MigrationResult(moved=False, reason="no_source")
+    if new.exists():
+        return MigrationResult(moved=False, reason="target_exists")
+    # Consolidate any pending WAL into the main file so the wal/shm
+    # sidecars become disposable. Best-effort: a failure here just means
+    # we'll also move the sidecars below.
+    try:
+        with closing(_connect(old)) as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            conn.commit()
+    except sqlite3.Error:
+        pass
+    new.parent.mkdir(parents=True, exist_ok=True)
+    moved: list[Path] = []
+    for suffix in ("", "-wal", "-shm"):
+        src = Path(str(old) + suffix)
+        if src.exists():
+            dst = Path(str(new) + suffix)
+            shutil.move(str(src), str(dst))
+            moved.append(dst)
+    return MigrationResult(moved=True, reason="migrated", files=tuple(moved))
 
 
 def _connect(path: Path) -> sqlite3.Connection:
