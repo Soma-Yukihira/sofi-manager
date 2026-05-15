@@ -1,0 +1,57 @@
+name: Sync wiki
+
+# Mirrors docs/wiki/ → the sofi-manager.wiki repo so wiki pages stay
+# under PR review and direct edits on the GitHub Wiki UI are not the
+# source of truth. Triggered only when wiki sources change on main.
+#
+# Uses the default GITHUB_TOKEN by default. If pushing to the wiki repo
+# fails with a permission error, the repo admin can set a WIKI_TOKEN
+# secret (a PAT with `repo` scope) and the workflow will prefer it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/wiki/**"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+
+      - name: Checkout wiki
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+          token: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Mirror docs/wiki/ into wiki/
+        run: |
+          rsync -av --delete \
+            --exclude='.git' \
+            docs/wiki/ wiki/
+
+      - name: Commit and push
+        working-directory: wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Wiki already in sync with docs/wiki/."
+            exit 0
+          fi
+          git add -A
+          git commit -m "Sync wiki from ${GITHUB_SHA::7}"
+          git push
