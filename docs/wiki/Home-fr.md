@@ -11,13 +11,14 @@ Bienvenue. Ce wiki est le complément détaillé du
 
 ## Par où commencer
 
-| Si tu es…                  | Lis d'abord                              |
-| -------------------------- | ---------------------------------------- |
-| En première installation   | [Installation](Installation-fr)          |
-| Tu règles un bot existant  | [Configuration](Configuration-fr)        |
-| Tu personnalises l'UI      | [Thèmes](Theming-fr)                     |
-| Tu débogues un drop raté   | [Dépannage](Troubleshooting-fr)          |
-| Tu forkes ou étends        | [Architecture](Architecture-fr)          |
+| Si tu es…                          | Lis d'abord                              |
+| ---------------------------------- | ---------------------------------------- |
+| En première installation           | [Installation](Installation-fr)          |
+| Tu règles un bot existant          | [Configuration](Configuration-fr)        |
+| Tu regardes l'historique / exports | [Stats](Stats-fr)                        |
+| Tu personnalises l'UI              | [Thèmes](Theming-fr)                     |
+| Tu débogues un drop raté           | [Dépannage](Troubleshooting-fr)          |
+| Tu forkes ou étends                | [Architecture](Architecture-fr)          |
 
 ## Ce que ce projet est — et n'est pas
 
