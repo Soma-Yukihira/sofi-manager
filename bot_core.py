@@ -37,6 +37,25 @@ from scoring import choose_card, score_card
 SOFI_ID = 853629533855809596
 
 
+def _drain_and_close_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Cancel & await every pending task, then close the loop.
+
+    Skipping the drain lets asyncio's Task GC emit "Task was destroyed but
+    it is pending!" on app exit — Client.close() chained on a cancelled
+    curl_cffi force-timeout task is the usual culprit. Must run only when
+    the loop is stopped (not running).
+    """
+    try:
+        pending = asyncio.all_tasks(loop)
+        for t in pending:
+            t.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+    except Exception:
+        pass
+    loop.close()
+
+
 def default_config() -> dict[str, Any]:
     """Config par défaut pour un nouveau bot."""
     return {
@@ -299,7 +318,7 @@ class SelfBot:
         finally:
             try:
                 if self._loop and not self._loop.is_closed():
-                    self._loop.close()
+                    _drain_and_close_loop(self._loop)
             except Exception:
                 pass
             if self.status != self.STATUS_ERROR:

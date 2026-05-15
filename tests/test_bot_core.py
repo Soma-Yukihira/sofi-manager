@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from bot_core import (
     SelfBot,
+    _drain_and_close_loop,
     default_config,
     sanitize_config,
 )
@@ -115,6 +116,34 @@ class SelfBotStopTests(unittest.TestCase):
         finally:
             loop.call_soon_threadsafe(loop.stop)
             thr.join(timeout=2)
+
+
+class DrainAndCloseLoopTests(unittest.TestCase):
+    """Pending tasks left in a closed loop trigger asyncio's "Task was
+    destroyed but it is pending!" warning on interpreter shutdown."""
+
+    def test_drain_cancels_pending_tasks_and_closes_loop(self):
+        loop = asyncio.new_event_loop()
+
+        async def long_running() -> None:
+            await asyncio.sleep(3600)
+
+        # Schedule the task on the loop without running it to completion.
+        task = loop.create_task(long_running())
+        # Step the loop briefly so the task starts and reaches the sleep.
+        loop.run_until_complete(asyncio.sleep(0))
+        self.assertFalse(task.done())
+
+        _drain_and_close_loop(loop)
+
+        self.assertTrue(loop.is_closed())
+        self.assertTrue(task.done())
+        self.assertTrue(task.cancelled())
+
+    def test_drain_on_empty_loop_just_closes(self):
+        loop = asyncio.new_event_loop()
+        _drain_and_close_loop(loop)
+        self.assertTrue(loop.is_closed())
 
 
 class SdWatchdogTests(unittest.TestCase):
