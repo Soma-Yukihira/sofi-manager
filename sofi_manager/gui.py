@@ -353,6 +353,9 @@ class SelfbotManagerApp(ctk.CTk):
         current_sha = self.version_info.sha
         if version.should_announce_update(last_seen, current_sha):
             self._post_update_old_sha = last_seen
+            # Persist the base SHA so the sidebar "Changements" link stays
+            # active across restarts until the next real update overwrites it.
+            self.settings["last_changelog_base_sha"] = last_seen
         # Bump last_seen the moment we decide whether to announce, so a
         # crash before banner-dismiss doesn't re-announce the same update.
         if isinstance(current_sha, str) and current_sha and last_seen != current_sha:
@@ -594,9 +597,13 @@ class SelfbotManagerApp(ctk.CTk):
         backfills count + date from the GitHub API. The frame is
         `grid_remove`d when the source is unknown - showing 'unknown'
         would be noise.
+
+        The "Changements" link below the version reopens the post-update
+        modal at any time. Disabled (with hover tooltip) when no prior
+        update has been observed on this install.
         """
         T = self.theme
-        self.version_box = ctk.CTkFrame(parent, fg_color="transparent", height=26)
+        self.version_box = ctk.CTkFrame(parent, fg_color="transparent", height=44)
         self.version_box.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 10))
         self.version_box.grid_propagate(False)
         self.version_label = ctk.CTkLabel(
@@ -606,7 +613,104 @@ class SelfbotManagerApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
         )
         self.version_label.pack(anchor="w")
+
+        self.changelog_link = ctk.CTkLabel(
+            self.version_box,
+            text="Changements",
+            text_color=T["text_dim"],
+            font=ctk.CTkFont(size=11, underline=True),
+        )
+        self.changelog_link.pack(anchor="w", pady=(2, 0))
+        self._wire_changelog_link()
         self._refresh_version_label()
+
+    def _changelog_base_sha(self) -> str | None:
+        """Return the SHA before the last observed update, or None.
+
+        Backed by `settings["last_changelog_base_sha"]`, written once at
+        startup when a real SHA transition is detected. Returns None if
+        the value is absent, empty, or coincides with the current SHA
+        (defensive against hand-edited settings).
+        """
+        base = self.settings.get("last_changelog_base_sha")
+        if not isinstance(base, str) or not base:
+            return None
+        if base == self.version_info.sha:
+            return None
+        return base
+
+    def _wire_changelog_link(self) -> None:
+        """Bind hover + click on the sidebar 'Changements' label.
+
+        Click is wired only when there is a base SHA to compare against;
+        otherwise the label stays dim, no cursor, and hover surfaces a
+        small tooltip explaining the inactive state.
+        """
+        T = self.theme
+        link = getattr(self, "changelog_link", None)
+        if link is None:
+            return
+        # Drop any prior bindings so theme reloads don't stack handlers.
+        for seq in ("<Enter>", "<Leave>", "<Button-1>"):
+            try:
+                link.unbind(seq)
+            except Exception:
+                pass
+        self._changelog_tooltip: Any = None
+        link.configure(text_color=T["text_dim"])
+        base = self._changelog_base_sha()
+        if base:
+            try:
+                link.configure(cursor="hand2")
+            except Exception:
+                pass
+            link.bind("<Enter>", lambda _e: link.configure(text_color=T["accent"]))
+            link.bind("<Leave>", lambda _e: link.configure(text_color=T["text_dim"]))
+            link.bind("<Button-1>", lambda _e: self._open_changelog_modal())
+        else:
+            try:
+                link.configure(cursor="")
+            except Exception:
+                pass
+            link.bind("<Enter>", lambda _e: self._show_changelog_tooltip())
+            link.bind("<Leave>", lambda _e: self._hide_changelog_tooltip())
+
+    def _show_changelog_tooltip(self) -> None:
+        if getattr(self, "_changelog_tooltip", None) is not None:
+            return
+        link = getattr(self, "changelog_link", None)
+        if link is None:
+            return
+        T = self.theme
+        try:
+            tip = tk.Toplevel(self)
+            tip.wm_overrideredirect(True)
+            tip.configure(bg=T["panel"])
+            tk.Label(
+                tip,
+                text="Aucune mise à jour récente",
+                bg=T["panel"],
+                fg=T["text_dim"],
+                font=("Segoe UI", 9),
+                padx=8,
+                pady=4,
+            ).pack()
+            x = link.winfo_rootx() + link.winfo_width() + 10
+            y = link.winfo_rooty() - 4
+            tip.wm_geometry(f"+{x}+{y}")
+            self._changelog_tooltip = tip
+        except Exception:
+            self._changelog_tooltip = None
+
+    def _hide_changelog_tooltip(self) -> None:
+        tip = getattr(self, "_changelog_tooltip", None)
+        if tip is None:
+            return
+        try:
+            tip.destroy()
+        except Exception:
+            pass
+        self._changelog_tooltip = None
 
     def _refresh_version_label(self) -> None:
         v = self.version_info
@@ -1097,15 +1201,23 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
-    def _open_changelog_modal(self) -> None:
-        """In-app modal listing commits between the previous and current SHA.
+    def _open_changelog_modal(
+        self,
+        old_sha: str | None = None,
+        new_sha: str | None = None,
+    ) -> None:
+        """In-app modal listing commits between two SHAs.
 
+        Called with no args by both the post-update banner and the
+        sidebar link. Resolution order for `old`: explicit arg →
+        `_post_update_old_sha` (set once at init when a transition is
+        observed) → `_changelog_base_sha()` (persisted across restarts).
         The compare-URL fallback stays available as a button so users
         can hop to GitHub when the API is rate-limited / offline or
         when they want the diff view.
         """
-        old = self._post_update_old_sha
-        new = self.version_info.sha
+        old = old_sha or self._post_update_old_sha or self._changelog_base_sha()
+        new = new_sha or self.version_info.sha
         if not old or not new:
             return
 
