@@ -66,21 +66,21 @@ changement de spec, d'asset ou de `requirements.txt`.
 ## Chemins runtime
 
 L'exe gelé doit lire son icône embarquée d'un côté et écrire sa config
-runtime d'un autre. Deux helpers dans `gui.py` font le tri :
+runtime d'un autre. Deux helpers dans `paths.py` font le tri :
 
-| Helper       | Résout vers (frozen)              | Résout vers (source)         |
-| ------------ | --------------------------------- | ---------------------------- |
-| `BUNDLE_DIR` | `sys._MEIPASS` (assets read-only) | racine du repo (next to `gui.py`) |
-| `USER_DIR`   | dossier contenant le .exe         | racine du repo               |
+| Helper          | Résout vers (frozen)              | Résout vers (source)         |
+| --------------- | --------------------------------- | ---------------------------- |
+| `bundle_dir()`  | `sys._MEIPASS` (assets read-only) | racine du repo (à côté de `gui.py`) |
+| `user_dir()`    | dossier contenant le .exe         | racine du repo               |
 
 - **Assets read-only** (`assets/app.ico`, thèmes customtkinter) vivent
-  dans `BUNDLE_DIR`. PyInstaller les embarque à la compilation.
-- **État mutable** (`bots.json`, `settings.json`, `grabs.db`) vit dans
-  `USER_DIR`. L'utilisateur final peut donc éditer/sauvegarder ces
+  sous `bundle_dir()`. PyInstaller les embarque à la compilation.
+- **État mutable** (`bots.json`, `settings.json`, `grabs.db`) vit sous
+  `user_dir()`. L'utilisateur final peut donc éditer/sauvegarder ces
   fichiers à côté de l'exe, exactement comme dans l'install source.
 
-`cli.py` applique la même règle. La résolution vit dans `paths.py` —
-GUI, CLI et `storage.py` partagent la même racine.
+`gui.py`, `cli.py` et `storage.py` importent tous depuis `paths.py` —
+ils partagent la même racine.
 
 > [!NOTE]
 > Les versions antérieures stockaient `grabs.db` sous
@@ -127,7 +127,8 @@ comme faux positif, ou recompile depuis les sources.
 
 | Symptôme                                  | Cause / correctif                                                                          |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `ModuleNotFoundError` au premier lancement | Un nouvel import runtime n'est pas dans le spec. Ajoute-le à `hiddenimports`.              |
+| `ModuleNotFoundError` au premier lancement | Un nouvel import runtime n'est pas dans le spec. Ajoute-le à `hiddenimports` dans `selfbot-manager.spec`. Les C-extensions importées par nom (par ex. `_cffi_backend`) y figurent déjà — étends ce schéma pour les nouvelles deps natives. |
+| `ModuleNotFoundError: _cffi_backend` (ou autre `.pyd` ABI-taggué manquant) | Le tag ABI de la wheel installée ne correspond pas au Python de ton venv. Réinstalle le coupable : `python -m pip install --force-reinstall --no-cache-dir cffi curl_cffi`, puis rebuild. |
 | Icône absente sur la fenêtre / barre       | `assets/app.ico` n'a pas été embarqué. Vérifie `datas` dans le spec.                       |
 | `bots.json` introuvable à côté de l'exe   | Mauvais répertoire de travail. Lance toujours via le .exe (ou le raccourci), pas via `_internal/`. |
 | Build OK mais l'exe se ferme immédiatement | Un `print()` console-only a crashé sans console. Lance l'exe depuis un terminal pour voir la trace. |
