@@ -7,9 +7,19 @@ A short tour for anyone forking or extending the project.
 ## Files
 
 ```
-main.py        ← entry point, just calls gui.run()
-gui.py         ← all UI: theme system, sidebar, tabs, logs, modal
-bot_core.py    ← SelfBot class, parsing, scoring, no UI imports
+main.py        ← GUI entry. Runs apply_pending_on_startup() before
+                  importing gui, then gui.run().
+cli.py         ← Headless / VPS entry. Shares the same core.
+gui.py         ← CustomTkinter UI: theme system, sidebar, tabs, logs,
+                  modals, update banner.
+bot_core.py    ← SelfBot class. SOFI parsing + scoring. Pure logic.
+updater.py     ← Auto-updater: git fast-forward, ZIP codeload fallback,
+                  skip_reason classifier (5 states).
+crypto.py      ← Fernet token encryption. Key in the OS keyring with
+                  a file fallback.
+paths.py       ← bundle_dir() / user_dir() resolution. Source of truth
+                  for source-vs-frozen path differences.
+storage.py     ← SQLite grab history (WAL). Legacy DB migration.
 ```
 
 The split is enforced by convention:
@@ -17,9 +27,8 @@ The split is enforced by convention:
 - `bot_core.py` does **not** import anything UI.
 - `gui.py` does **not** import `discord`. It only knows about `SelfBot`,
   `default_config()`, and the parsing helpers used in tests.
-
-This means you could ship a CLI variant by writing a `cli.py` that uses
-`SelfBot` directly.
+- `cli.py` is the proof the core is UI-agnostic: it instantiates
+  `SelfBot` directly with no Tk dependency.
 
 ## Threading model
 
@@ -93,12 +102,41 @@ languages.
 
 ## Persistence
 
-| File            | Owner    | Notes                                       |
-| --------------- | -------- | ------------------------------------------- |
-| `bots.json`     | `gui.py` | Array of bot configs. Created on first add. |
-| `settings.json` | `gui.py` | UI prefs (theme mode + color overrides).    |
+| File            | Owner                | Notes                                       |
+| --------------- | -------------------- | ------------------------------------------- |
+| `bots.json`     | `gui.py` / `cli.py`  | Bot configs. Tokens Fernet-encrypted via `crypto.py`. |
+| `settings.json` | `gui.py`             | Theme prefs + updater state (`zip_install_sha`). |
+| `grabs.db`      | `storage.py`         | SQLite history (WAL). `USER_DIR/grabs.db` by default, override with `SOFI_DB_PATH`. Legacy `%APPDATA%` / XDG paths migrated on first launch. |
 
-Both are gitignored.
+All three are gitignored — they survive every update.
+
+## Update flow
+
+`updater.skip_reason()` classifies the install into one of five
+buckets. The GUI branches off it:
+
+```
+                  ┌── None      → git path: git pull --ff-only,
+                  │               re-exec on user "Redémarrer" click.
+                  │
+                  ├── no-git    → ZIP path: codeload fetch +
+                  │               _apply_zip_bytes overwrite, same
+   skip_reason() ─┤               banner, baseline persisted as
+                  │               zip_install_sha in settings.json.
+                  │
+                  ├── frozen    → amber banner only. PyInstaller
+                  │               bundles can't atomically swap their
+                  │               own source files at runtime.
+                  │
+                  └── off-main  → silent. Dev states. The menu's
+                      / dirty     on-demand check surfaces them when
+                      / ahead     invoked.
+```
+
+`apply_pending_on_startup` (called from `main.py` *before* `import
+gui`) only takes the git path — the ZIP and frozen cases are handled
+later from the UI thread once Tk is running, via
+`check_zip_in_background` and `_maybe_show_skip_reason_banner`.
 
 ## Packaging
 
