@@ -6,20 +6,36 @@ A short tour for anyone forking or extending the project.
 
 ## Files
 
+Runtime modules live under the `sofi_manager/` package. `main.py` and
+`cli.py` at the project root are thin shims that delegate to it — they
+stay at the root so the Windows shortcut, the PyInstaller spec, and
+existing VPS systemd units (`python cli.py …`) keep working unchanged.
+
 ```
-main.py        ← GUI entry. Runs apply_pending_on_startup() before
-                  importing gui, then gui.run().
-cli.py         ← Headless / VPS entry. Shares the same core.
-gui.py         ← CustomTkinter UI: theme system, sidebar, tabs, logs,
-                  modals, update banner.
-bot_core.py    ← SelfBot class. SOFI parsing + scoring. Pure logic.
-updater.py     ← Auto-updater: git fast-forward, ZIP codeload fallback,
-                  skip_reason classifier (5 states).
-crypto.py      ← Fernet token encryption. Key in the OS keyring with
-                  a file fallback.
-paths.py       ← bundle_dir() / user_dir() resolution. Source of truth
-                  for source-vs-frozen path differences.
-storage.py     ← SQLite grab history (WAL). Legacy DB migration.
+main.py                       ← root shim. Runs the migration cleanup +
+                                apply_pending_on_startup(), then
+                                sofi_manager.gui.run().
+cli.py                        ← root shim. Delegates to
+                                sofi_manager.cli.main().
+sofi_manager/
+├── gui.py                    ← CustomTkinter UI: theme system, sidebar,
+│                               tabs, logs, modals, update banner.
+├── cli.py                    ← Headless / VPS subcommands. Same core.
+├── bot_core.py               ← SelfBot class. Discord orchestration.
+├── parsing.py                ← SOFI message parsers (FR + EN, pure).
+├── scoring.py                ← Card scoring + wishlist override (pure).
+├── updater.py                ← Auto-updater: git fast-forward, ZIP
+│                               codeload fallback, skip_reason
+│                               classifier (5 states).
+├── crypto.py                 ← Fernet token encryption. Key in the OS
+│                               keyring with a file fallback.
+├── paths.py                  ← bundle_dir() / user_dir() resolution.
+│                               Source of truth for source-vs-frozen
+│                               path differences.
+├── storage.py                ← SQLite grab history (WAL). Legacy DB
+│                               migration.
+└── _migrations.py            ← One-shot cleanup of pre-refactor root
+                                .py files orphaned by the ZIP updater.
 ```
 
 The split is enforced by convention:
@@ -102,11 +118,11 @@ languages.
 
 ## Persistence
 
-| File            | Owner                | Notes                                       |
-| --------------- | -------------------- | ------------------------------------------- |
-| `bots.json`     | `gui.py` / `cli.py`  | Bot configs. Tokens Fernet-encrypted via `crypto.py`. |
-| `settings.json` | `gui.py`             | Theme prefs + updater state (`zip_install_sha`). |
-| `grabs.db`      | `storage.py`         | SQLite history (WAL). `USER_DIR/grabs.db` by default, override with `SOFI_DB_PATH`. Legacy `%APPDATA%` / XDG paths migrated on first launch. |
+| File            | Owner                              | Notes                                       |
+| --------------- | ---------------------------------- | ------------------------------------------- |
+| `bots.json`     | `sofi_manager.gui` / `.cli`        | Bot configs. Tokens Fernet-encrypted via `sofi_manager.crypto`. |
+| `settings.json` | `sofi_manager.gui`                 | Theme prefs + updater state (`zip_install_sha`). |
+| `grabs.db`      | `sofi_manager.storage`             | SQLite history (WAL). `USER_DIR/grabs.db` by default, override with `SOFI_DB_PATH`. Legacy `%APPDATA%` / XDG paths migrated on first launch. |
 
 All three are gitignored — they survive every update.
 
@@ -133,10 +149,16 @@ buckets. The GUI branches off it:
                       / ahead     invoked.
 ```
 
-`apply_pending_on_startup` (called from `main.py` *before* `import
-gui`) only takes the git path — the ZIP and frozen cases are handled
-later from the UI thread once Tk is running, via
+`apply_pending_on_startup` (called from `main.py` *before* the
+`sofi_manager.gui` import) only takes the git path — the ZIP and frozen
+cases are handled later from the UI thread once Tk is running, via
 `check_zip_in_background` and `_maybe_show_skip_reason_banner`.
+
+The root shim also calls `sofi_manager._migrations.cleanup_legacy_root_files()`
+before any of the above. That is a one-shot wipe of pre-refactor `.py`
+modules left at the project root by the ZIP updater (codeload extraction
+is overwrite-only, never deletes upstream-removed files). No-op on
+git-clone installs — git already deleted the orphans.
 
 ## Packaging
 
@@ -144,9 +166,9 @@ The source tree runs as-is with `python main.py`. For end users, a
 checked-in PyInstaller spec (`selfbot-manager.spec`) bundles the GUI
 into a standalone Windows executable via `python tools/build.py`.
 
-Two runtime path helpers in `paths.py` keep the source and frozen
-builds in sync, and are imported by `gui.py`, `cli.py`, and
-`storage.py`:
+Two runtime path helpers in `sofi_manager.paths` keep the source and
+frozen builds in sync, and are imported by `sofi_manager.gui`,
+`sofi_manager.cli`, and `sofi_manager.storage`:
 
 - `bundle_dir()` — read-only assets. Equals `sys._MEIPASS` when frozen,
   else the repo root.

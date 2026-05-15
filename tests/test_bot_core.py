@@ -5,7 +5,7 @@ import unittest
 import unittest.mock
 from unittest.mock import MagicMock
 
-from bot_core import (
+from sofi_manager.bot_core import (
     SelfBot,
     _drain_and_close_loop,
     default_config,
@@ -225,7 +225,7 @@ class RecordGrabSafeTests(unittest.TestCase):
     def test_calls_storage_with_card_fields(self):
         bot = self._bot("bot[1]")
         card = {"index": 0, "name": "Miku", "series": "Vocaloid", "rarity": 42, "hearts": 256}
-        with unittest.mock.patch("bot_core.storage.record_grab") as rec:
+        with unittest.mock.patch("sofi_manager.bot_core.storage.record_grab") as rec:
             bot._record_grab_safe(card, channel_id=98765, success=True, error_code=None)
         rec.assert_called_once()
         sent = rec.call_args.args[0]
@@ -242,7 +242,7 @@ class RecordGrabSafeTests(unittest.TestCase):
     def test_persists_failure_with_error_code(self):
         bot = self._bot()
         card = {"index": 1, "name": "X", "series": "Y", "rarity": 100, "hearts": 50}
-        with unittest.mock.patch("bot_core.storage.record_grab") as rec:
+        with unittest.mock.patch("sofi_manager.bot_core.storage.record_grab") as rec:
             bot._record_grab_safe(card, channel_id=1, success=False, error_code="40060")
         sent = rec.call_args.args[0]
         self.assertFalse(sent.success)
@@ -252,7 +252,7 @@ class RecordGrabSafeTests(unittest.TestCase):
         bot = self._bot()
         card = {"index": 0, "name": "X", "series": "Y", "rarity": 100, "hearts": 0}
         with unittest.mock.patch(
-            "bot_core.storage.record_grab",
+            "sofi_manager.bot_core.storage.record_grab",
             side_effect=RuntimeError("disk full"),
         ):
             # Must not raise.
@@ -266,7 +266,7 @@ class RecordGrabSafeTests(unittest.TestCase):
     def test_handles_card_with_missing_rarity(self):
         # Defensive: a malformed card dict shouldn't crash the hook.
         bot = self._bot()
-        with unittest.mock.patch("bot_core.storage.record_grab") as rec:
+        with unittest.mock.patch("sofi_manager.bot_core.storage.record_grab") as rec:
             bot._record_grab_safe(
                 {"name": "X", "series": "Y", "rarity": None, "hearts": None},
                 channel_id=1,

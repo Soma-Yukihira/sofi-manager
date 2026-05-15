@@ -68,7 +68,7 @@ arrivé — colle-la dans une issue.
 Le bot a attendu 10× 0.5s pour que les boutons s'activent mais ça n'est
 jamais arrivé. Rare, généralement un hoquet Discord. Le drop est perdu
 pour ce cycle. Si c'est chronique, augmente le nombre de retries dans
-[`bot_core.py`](../../blob/main/bot_core.py) (`for attempt in range(10)`).
+[`bot_core.py`](../../blob/main/sofi_manager/bot_core.py) (`for attempt in range(10)`).
 
 ---
 

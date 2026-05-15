@@ -17,7 +17,7 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
-from parsing import (
+from sofi_manager.parsing import (
     is_cooldown_message,
     is_drop_trigger,
     parse_button_hearts,

@@ -6,20 +6,38 @@ Petit tour pour qui veut forker ou étendre le projet.
 
 ## Fichiers
 
+Les modules runtime vivent sous le package `sofi_manager/`. `main.py` et
+`cli.py` à la racine sont de fins shims qui délèguent — ils restent au
+root pour que le raccourci Windows, le spec PyInstaller, et les units
+systemd VPS existantes (`python cli.py …`) continuent de fonctionner
+sans changement.
+
 ```
-main.py        ← Entrée GUI. Lance apply_pending_on_startup() avant
-                  d'importer gui, puis gui.run().
-cli.py         ← Entrée headless / VPS. Partage le même cœur.
-gui.py         ← UI CustomTkinter : système thèmes, sidebar, tabs,
-                  logs, modales, bandeau update.
-bot_core.py    ← Classe SelfBot. Parsing + scoring SOFI. Logique pure.
-updater.py     ← Auto-updater : fast-forward git, fallback ZIP
-                  codeload, classifieur skip_reason (5 états).
-crypto.py      ← Chiffrement Fernet des tokens. Clé dans le keyring OS
-                  avec fallback fichier.
-paths.py       ← Résolution bundle_dir() / user_dir(). Source de
-                  vérité pour les chemins source-vs-frozen.
-storage.py     ← Historique SQLite des grabs (WAL). Migration legacy.
+main.py                       ← shim racine. Lance la migration cleanup
+                                + apply_pending_on_startup(), puis
+                                sofi_manager.gui.run().
+cli.py                        ← shim racine. Délègue à
+                                sofi_manager.cli.main().
+sofi_manager/
+├── gui.py                    ← UI CustomTkinter : système thèmes,
+│                               sidebar, tabs, logs, modales, bandeau
+│                               update.
+├── cli.py                    ← Sous-commandes headless / VPS. Même cœur.
+├── bot_core.py               ← Classe SelfBot. Orchestration Discord.
+├── parsing.py                ← Parseurs messages SOFI (FR + EN, purs).
+├── scoring.py                ← Scoring cartes + override wishlist (pur).
+├── updater.py                ← Auto-updater : fast-forward git, fallback
+│                               ZIP codeload, classifieur skip_reason
+│                               (5 états).
+├── crypto.py                 ← Chiffrement Fernet des tokens. Clé dans
+│                               le keyring OS avec fallback fichier.
+├── paths.py                  ← Résolution bundle_dir() / user_dir().
+│                               Source de vérité pour les chemins
+│                               source-vs-frozen.
+├── storage.py                ← Historique SQLite des grabs (WAL).
+│                               Migration legacy.
+└── _migrations.py            ← Cleanup one-shot des .py racine
+                                orphelinés par l'updater ZIP.
 ```
 
 Le split est enforced par convention :
@@ -102,11 +120,11 @@ EN (`dropping cards`) — étends-le si SOFI ajoute d'autres langues.
 
 ## Persistance
 
-| Fichier         | Owner                | Notes                                       |
-| --------------- | -------------------- | ------------------------------------------- |
-| `bots.json`     | `gui.py` / `cli.py`  | Configs bot. Tokens chiffrés en Fernet via `crypto.py`. |
-| `settings.json` | `gui.py`             | Prefs thème + état updater (`zip_install_sha`). |
-| `grabs.db`      | `storage.py`         | Historique SQLite (WAL). `USER_DIR/grabs.db` par défaut, override avec `SOFI_DB_PATH`. Chemins legacy `%APPDATA%` / XDG migrés au premier lancement. |
+| Fichier         | Owner                              | Notes                                       |
+| --------------- | ---------------------------------- | ------------------------------------------- |
+| `bots.json`     | `sofi_manager.gui` / `.cli`        | Configs bot. Tokens chiffrés en Fernet via `sofi_manager.crypto`. |
+| `settings.json` | `sofi_manager.gui`                 | Prefs thème + état updater (`zip_install_sha`). |
+| `grabs.db`      | `sofi_manager.storage`             | Historique SQLite (WAL). `USER_DIR/grabs.db` par défaut, override avec `SOFI_DB_PATH`. Chemins legacy `%APPDATA%` / XDG migrés au premier lancement. |
 
 Les trois sont gitignorés — ils survivent à chaque update.
 
@@ -134,10 +152,17 @@ GUI branche dessus :
                       / ahead     quand on l'invoque.
 ```
 
-`apply_pending_on_startup` (appelé depuis `main.py` *avant* `import
-gui`) ne prend que le chemin git — les cas ZIP et frozen sont gérés
-plus tard depuis le thread UI une fois Tk lancé, via
+`apply_pending_on_startup` (appelé depuis `main.py` *avant* l'import de
+`sofi_manager.gui`) ne prend que le chemin git — les cas ZIP et frozen
+sont gérés plus tard depuis le thread UI une fois Tk lancé, via
 `check_zip_in_background` et `_maybe_show_skip_reason_banner`.
+
+Le shim racine appelle aussi `sofi_manager._migrations.cleanup_legacy_root_files()`
+avant tout le reste. C'est un wipe one-shot des modules `.py`
+pre-refactor laissés à la racine du projet par l'updater ZIP
+(l'extraction codeload est overwrite-only, ne supprime jamais les
+fichiers retirés en amont). No-op sur les installs git-clone — git a
+déjà supprimé les orphelins.
 
 ## Packaging
 
@@ -146,9 +171,9 @@ les utilisateurs finaux, un spec PyInstaller versionné
 (`selfbot-manager.spec`) bundle le GUI en exécutable Windows autonome
 via `python tools/build.py`.
 
-Deux helpers de chemins runtime dans `paths.py` synchronisent les
-builds source et gelés, et sont importés par `gui.py`, `cli.py` et
-`storage.py` :
+Deux helpers de chemins runtime dans `sofi_manager.paths` synchronisent
+les builds source et gelés, et sont importés par `sofi_manager.gui`,
+`sofi_manager.cli` et `sofi_manager.storage` :
 
 - `bundle_dir()` — assets read-only. Vaut `sys._MEIPASS` une fois gelé,
   sinon la racine du repo.

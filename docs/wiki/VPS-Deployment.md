@@ -6,7 +6,8 @@ Run Selfbot Manager **headless** on a Linux server — no GUI required.
 
 ## Why CLI?
 
-The repository ships two entry points sharing the same core (`bot_core.py`):
+The repository ships two entry points sharing the same core
+(`sofi_manager.bot_core`):
 
 | Entry point | When to use                                          |
 | ----------- | ---------------------------------------------------- |

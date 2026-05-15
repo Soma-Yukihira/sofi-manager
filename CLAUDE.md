@@ -73,18 +73,27 @@ under `dist/` so a clean checkout stays clean.
 
 ## Where things live
 
+Runtime modules live under the `sofi_manager/` package. `main.py` and
+`cli.py` at the root are thin shims that delegate to it — they stay at
+the root so the Windows shortcut, the PyInstaller spec, and existing
+VPS systemd units (`python cli.py …`) keep working.
+
 | Path                                     | Purpose                                  |
 | ---------------------------------------- | ---------------------------------------- |
-| `main.py`                                | GUI entry point (pre-import update hook) |
-| `cli.py`                                 | Headless / VPS entry point               |
-| `gui.py`                                 | CustomTkinter UI + theme system + banner |
-| `bot_core.py`                            | `SelfBot` class, SOFI parsing + scoring  |
-| `crypto.py`                              | Fernet token encryption (keyring + file) |
-| `paths.py`                               | `user_dir()` / `bundle_dir()` shared by gui/cli/storage |
-| `storage.py`                             | SQLite grab history + `migrate_db` legacy mover |
-| `updater.py`                             | Git-source auto-updater (Discord-style)  |
+| `main.py`                                | GUI entry shim (pre-import update hook) → `sofi_manager.gui:run` |
+| `cli.py`                                 | Headless / VPS entry shim → `sofi_manager.cli:main` |
+| `sofi_manager/gui.py`                    | CustomTkinter UI + theme system + banner |
+| `sofi_manager/cli.py`                    | CLI commands (list / show / add / rm / run) |
+| `sofi_manager/bot_core.py`               | `SelfBot` class, SOFI parsing + scoring  |
+| `sofi_manager/crypto.py`                 | Fernet token encryption (keyring + file) |
+| `sofi_manager/paths.py`                  | `user_dir()` / `bundle_dir()` shared by gui/cli/storage |
+| `sofi_manager/parsing.py`                | Pure SOFI message parsers (FR + EN)      |
+| `sofi_manager/scoring.py`                | Card scoring + wishlist override         |
+| `sofi_manager/storage.py`                | SQLite grab history + `migrate_db` legacy mover |
+| `sofi_manager/updater.py`                | Git-source auto-updater (Discord-style)  |
+| `sofi_manager/_migrations.py`            | One-shot cleanup of pre-refactor root .py files |
 | `tools/build.py` + `selfbot-manager.spec`| PyInstaller build driver + spec          |
 | `tools/update.py`                        | End-user `git pull` CLI updater          |
 | `tools/create_shortcut.py`               | Windows taskbar shortcut generator       |
 | `tests/`                                 | pytest unit tests for the core           |
-| `docs/wiki/`                             | Wiki sources (EN + FR)                   |
+| `docs/wiki/`                             | Wiki sources (EN + FR, mirrored to GH Wiki via `.github/workflows/wiki-sync.yml`) |

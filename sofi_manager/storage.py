@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
-from paths import user_dir
+from .paths import user_dir
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS grabs (

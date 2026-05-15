@@ -9,22 +9,33 @@ SOFI selfbots in parallel. Each bot runs in its own thread with its own
 asyncio loop, sharing a common config file (`bots.json`) and theme
 (`settings.json`).
 
-- **GUI:** `main.py` → `gui.py` (CustomTkinter, black & gold theme,
-  17-slot color customization, dark / light presets).
-- **CLI:** `cli.py` for headless / VPS use; shares the same core as the
-  GUI.
-- **Core:** `bot_core.py` defines the `SelfBot` class — SOFI message
-  parsing (FR + EN), rarity / popularity scoring, wishlist override,
-  randomized night-pause window.
-- **Updater:** `updater.py` ships continuous updates from `origin/main`
-  via `git fetch` + `git pull --ff-only`, surfaced in the GUI as a
-  non-blocking gold banner.
+- **GUI:** `main.py` (root shim) → `sofi_manager.gui` (CustomTkinter,
+  black & gold theme, 17-slot color customization, dark / light presets).
+- **CLI:** `cli.py` (root shim) → `sofi_manager.cli` for headless / VPS
+  use; shares the same core as the GUI.
+- **Core:** `sofi_manager.bot_core` defines the `SelfBot` class — SOFI
+  message parsing (FR + EN), rarity / popularity scoring, wishlist
+  override, randomized night-pause window.
+- **Updater:** `sofi_manager.updater` ships continuous updates from
+  `origin/main` via `git fetch` + `git pull --ff-only`, surfaced in the
+  GUI as a non-blocking gold banner.
 
 ## Runtime layout
 
 ```
 sofi-manager/
-├── main.py / cli.py / gui.py / bot_core.py / updater.py
+├── main.py / cli.py      # thin shims at the root (Windows shortcut, VPS systemd)
+├── sofi_manager/         # runtime package — all the actual logic lives here
+│   ├── gui.py            # CustomTkinter UI + theme system + banner
+│   ├── cli.py            # CLI subcommands (list / show / add / rm / run)
+│   ├── bot_core.py       # `SelfBot` class
+│   ├── parsing.py        # SOFI message parsers (FR + EN, pure)
+│   ├── scoring.py        # card scoring + wishlist override (pure)
+│   ├── crypto.py         # Fernet token encryption (keyring + file fallback)
+│   ├── paths.py          # `user_dir()` / `bundle_dir()` helpers
+│   ├── storage.py        # SQLite grab history + legacy DB migration
+│   ├── updater.py        # git-source + ZIP-codeload auto-updater
+│   └── _migrations.py    # one-shot cleanup of pre-refactor root .py files
 ├── selfbot-manager.spec  # PyInstaller config, driven by tools/build.py
 ├── tools/
 │   ├── build.py          # `python tools/build.py [--onefile] [--clean]`
@@ -33,7 +44,7 @@ sofi-manager/
 │   └── install-systemd.sh
 ├── tests/                # pytest unit tests (core)
 ├── docs/
-│   ├── wiki/             # EN + FR wiki sources
+│   ├── wiki/             # EN + FR wiki sources (auto-synced to GitHub Wiki)
 │   └── images/           # banner + screenshots
 ├── assets/app.ico        # gold ⚜ icon, bundled into the .exe
 ├── requirements.txt      # discord.py-self, customtkinter, curl_cffi
@@ -43,7 +54,7 @@ sofi-manager/
 Per-user state created at first launch (gitignored):
 
 - `bots.json` — bot tokens + per-bot config (tokens are Fernet-encrypted
-  with a key kept in the OS keyring; see [crypto.py](crypto.py))
+  with a key kept in the OS keyring; see [crypto.py](sofi_manager/crypto.py))
 - `settings.json` — theme mode + 17-slot color customization
 - `grabs.db` — SQLite history (WAL). Override with `SOFI_DB_PATH`.
 - `Selfbot Manager.lnk` — Windows taskbar shortcut
@@ -94,10 +105,13 @@ The git-pull path **refuses to touch the tree** when:
 The `.git/`-absent case is no longer a no-op: `apply_zip_update`
 fetches `codeload.github.com/<repo>/zip/refs/heads/main`, validates it
 (zip-slip guard, strict SHA baseline persisted as `zip_install_sha`
-in `settings.json`), and overwrites tracked files in place. Frozen
-`.exe` is the only structurally un-updatable case — it surfaces an
-amber banner via `_maybe_show_skip_reason_banner` pointing at a
-rebuild.
+in `settings.json`), and overwrites tracked files in place. Because
+codeload extraction is overwrite-only (it never deletes files removed
+upstream), `sofi_manager._migrations.cleanup_legacy_root_files()` runs
+on startup as a one-shot to wipe pre-refactor `.py` orphans at the
+project root. Frozen `.exe` is the only structurally un-updatable case
+— it surfaces an amber banner via `_maybe_show_skip_reason_banner`
+pointing at a rebuild.
 
 `bots.json`, `settings.json` and `grabs.db` are gitignored, so they
 always survive.

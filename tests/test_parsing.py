@@ -1,6 +1,6 @@
 import unittest
 
-from parsing import (
+from sofi_manager.parsing import (
     format_drop_recipients,
     is_cooldown_message,
     is_drop_trigger,
