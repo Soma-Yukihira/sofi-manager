@@ -41,6 +41,9 @@ coverage.xml
 *.toc
 *.pkg
 
+# Auto-generated at build time (tools/build.py) — never commit
+sofi_manager/_build_info.py
+
 # Build outputs (never commit)
 *.exe
 *.zip

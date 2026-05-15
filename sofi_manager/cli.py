@@ -25,6 +25,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+from . import version as _version
 from .bot_core import SelfBot, default_config, sanitize_config
 from .crypto import decrypt_token, encrypt_token
 from .paths import user_dir as _user_dir
@@ -140,6 +141,20 @@ def header(title: str) -> None:
     cprint()
     cprint(f"{Color.GOLD}⚜  {Color.BOLD}{title}{Color.RESET}")
     cprint(f"{Color.DIMGRAY}{'-' * 60}{Color.RESET}")
+
+
+def _format_version_line(plain: bool = False) -> str:
+    """Single-line version banner shared by `--version` and `run` startup.
+
+    `plain` strips ANSI so the argparse `--version` action stays usable
+    in scripts and CI logs. The `run` path keeps the gold/dim styling
+    because it lands inside an interactive session.
+    """
+    v = _version.get_version()
+    body = f"Selfbot Manager {_version.format_full(v)} [{v.source}]"
+    if plain:
+        return body
+    return f"{Color.GOLD}⚜  {Color.BOLD}{body}{Color.RESET}"
 
 
 # =============================================
@@ -284,6 +299,7 @@ def cmd_rm(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    cprint(_format_version_line())
     bots_cfg = load_bots()
     if not bots_cfg:
         cprint(f"{Color.RED}No bots configured. Run `python cli.py add` first.{Color.RESET}")
@@ -402,6 +418,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-color",
         action="store_true",
         help="Disable ANSI colors (useful for log files / dumb TTYs).",
+    )
+    # argparse handles --version specially: it bypasses the required
+    # subparser check and exits cleanly, so this works without affecting
+    # the existing subcommand contract.
+    p.add_argument(
+        "--version",
+        action="version",
+        version=_format_version_line(plain=True),
     )
     sub = p.add_subparsers(dest="command", required=True, metavar="COMMAND")
 

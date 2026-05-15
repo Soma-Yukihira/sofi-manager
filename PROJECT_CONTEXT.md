@@ -19,6 +19,10 @@ asyncio loop, sharing a common config file (`bots.json`) and theme
 - **Updater:** `sofi_manager.updater` ships continuous updates from
   `origin/main` via `git fetch` + `git pull --ff-only`, surfaced in the
   GUI as a non-blocking gold banner.
+- **Version:** `sofi_manager.version` derives a `v<count> · <sha> ·
+  <date>` identifier from git at runtime — no `__version__` constant to
+  bump. Displayed in the sidebar footer, logged on `cli.py run`, and
+  used to drive a one-shot "what's new" banner after a pull.
 
 ## Runtime layout
 
@@ -35,6 +39,7 @@ sofi-manager/
 │   ├── paths.py          # `user_dir()` / `bundle_dir()` helpers
 │   ├── storage.py        # SQLite grab history + legacy DB migration
 │   ├── updater.py        # git-source + ZIP-codeload auto-updater
+│   ├── version.py        # git-derived build identification (v143 · sha · date)
 │   └── _migrations.py    # one-shot cleanup of pre-refactor root .py files
 ├── selfbot-manager.spec  # PyInstaller config, driven by tools/build.py
 ├── tools/
@@ -119,6 +124,35 @@ always survive.
 User-facing flow (banner copy, restart sequence, codeload details,
 `tools/update.py` CLI alternative): see
 [Updating](docs/wiki/Updating.md).
+
+### Version identification
+
+`sofi_manager/version.py` derives a stable identifier for the running
+build from git at runtime — no `__version__` constant, no manual bump
+in PRs. The triple is `v<count> · <short sha> · <date>`:
+
+- **count** = `git rev-list --count HEAD`. Monotonic, human-friendly
+  ("I'm on v143, you're on v140").
+- **sha** = `git log -1 --format=%h`. Non-ambiguous, links to the
+  commit page on GitHub.
+- **date** = `git log -1 --format=%cs`. Commit date, ISO `YYYY-MM-DD`.
+
+Resolution order with two fallbacks for installs without `.git/`:
+
+1. **Frozen `.exe`** reads `sofi_manager/_build_info.py`, written at
+   build time by `tools/build.py` (gitignored). PyInstaller bundles
+   `.py` files compiled to `.pyc` — the file is captured.
+2. **Git clone** shells out to `git` directly.
+3. **ZIP install** falls back to `settings["zip_install_sha"]` (the
+   SHA already tracked by the codeload-mode updater). Count and date
+   are unknown in this mode.
+4. Last-resort placeholder `"unknown"` if none of the above worked.
+
+The GUI persists `settings["last_seen_sha"]` once per launch. When it
+differs from the current SHA on the next start, a one-shot gold banner
+announces the change with a link to the GitHub compare URL between the
+two SHAs. First launch (no `last_seen_sha`) silently adopts the
+baseline so users don't see a fake "first update" banner.
 
 ## Git hygiene
 
