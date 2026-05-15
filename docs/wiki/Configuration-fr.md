@@ -9,7 +9,7 @@ Chaque champ de l'onglet **Configuration**, dans l'ordre.
 | Champ      | Ce qu'il fait                                                  |
 | ---------- | -------------------------------------------------------------- |
 | **Nom**    | Libellé libre affiché dans la sidebar. Aucun effet métier.     |
-| **Token**  | Ton token Discord. Stocké en local dans `bots.json`. Masqué.   |
+| **Token**  | Ton token Discord. Stocké chiffré (Fernet) dans `bots.json` ; la clé vit dans le keyring OS (fallback fichier). Masqué dans l'UI. |
 
 ## Channels
 
@@ -81,6 +81,13 @@ Deux zones de texte, une entrée par ligne.
 À la sauvegarde, les deux listes sont **dédoublonnées** (insensible à la
 casse) et **triées alphabétiquement**. Les doublons avec casse différente
 fusionnent vers la première casse vue.
+
+## Onglet Stats
+
+Dashboard lecture seule sur `grabs.db` — cartes KPI, graphique sur
+14 jours, drill-down par jour, export CSV. Voir [Stats](Stats-fr)
+pour le walkthrough complet et [Base de données](Database-fr) pour
+le schéma sous-jacent.
 
 ## Onglet Logs
 

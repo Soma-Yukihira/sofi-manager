@@ -79,6 +79,16 @@ Le bouton de vérification manuelle dans le menu (`↻ MAJ`) est ce qui
 les remonte. Pour les chemins end-user (bandeaux doré / ambre), voir
 [Mise à jour](Updating-fr).
 
+### Bandeau ambre : *Installation .exe — MAJ auto désactivées*
+
+Tu fais tourner un build `.exe` PyInstaller. L'updater ne peut pas
+swap atomiquement les fichiers sources du bundle pendant qu'il
+tourne, donc il s'écarte. Pour mettre à jour : télécharge un clone
+source frais et recompile avec `python tools/build.py`, puis remplace
+l'ancien dossier `dist/SelfbotManager/`. Tes `bots.json`,
+`settings.json` et `grabs.db` vivent dans ce même dossier et ne sont
+pas touchés par le rebuild.
+
 ### Vérif manuelle silencieuse (sur une branche feature)
 
 L'updater refuse de toucher un arbre qui n'est pas sur `main`. Reviens

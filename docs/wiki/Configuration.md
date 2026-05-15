@@ -9,7 +9,7 @@ Every field of the **Configuration** tab, in order.
 | Field      | What it does                                                |
 | ---------- | ----------------------------------------------------------- |
 | **Name**   | Free label shown in the sidebar. No effect on behavior.     |
-| **Token**  | Your Discord token. Stored locally in `bots.json`. Masked.  |
+| **Token**  | Your Discord token. Stored Fernet-encrypted in `bots.json`; the key lives in the OS keyring (file fallback). Masked in the UI. |
 
 ## Channels
 
@@ -78,6 +78,12 @@ Two text areas, one entry per line.
 On save, both lists are **deduplicated** (case-insensitive) and **sorted
 alphabetically**. Duplicate-with-different-case lines collapse to the first
 casing seen.
+
+## Stats tab
+
+A read-only dashboard over `grabs.db` — KPI cards, a 14-day chart,
+per-day drill-down, and CSV export. See [Stats](Stats) for the full
+walkthrough and [Database](Database) for the underlying schema.
 
 ## Logs tab
 
