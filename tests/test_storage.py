@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import os
 import sqlite3
 import time
@@ -17,6 +19,8 @@ from storage import (
     GrabRecord,
     compute_stats,
     default_db_path,
+    distinct_bot_labels,
+    export_csv,
     init_db,
     iter_grabs,
     record_grab,
@@ -350,6 +354,87 @@ class ComputeStatsTests(unittest.TestCase):
         self.assertEqual(sum(c for _, c in stats.daily_counts), 1)
         # But total still reflects every record.
         self.assertEqual(stats.total, 2)
+
+
+class DistinctBotLabelsTests(_TmpDB):
+    def test_empty_when_db_missing(self):
+        missing = self.db_path.parent / "absent.db"
+        self.assertEqual(distinct_bot_labels(missing), [])
+
+    def test_returns_sorted_unique_labels(self):
+        for label in ["bot[2]", "bot[1]", "bot[2]", "bot[3]", "bot[1]"]:
+            record_grab(GrabRecord(bot_label=label), path=self.db_path)
+        self.assertEqual(
+            distinct_bot_labels(self.db_path),
+            ["bot[1]", "bot[2]", "bot[3]"],
+        )
+
+    def test_empty_when_db_present_but_no_rows(self):
+        init_db(self.db_path)
+        self.assertEqual(distinct_bot_labels(self.db_path), [])
+
+
+class ExportCsvTests(unittest.TestCase):
+    def _records(self) -> list[GrabRecord]:
+        return [
+            GrabRecord(
+                ts=1_700_000_000,
+                bot_label="bot[1]",
+                channel_id=42,
+                card_name="Hatsune Miku",
+                series="Vocaloid",
+                rarity="SR",
+                hearts=512,
+                score=0.873_456,
+                success=True,
+            ),
+            GrabRecord(
+                ts=1_700_000_100,
+                bot_label="bot[2]",
+                success=False,
+                error_code="429",
+            ),
+        ]
+
+    def test_writes_header_and_rows(self):
+        out = io.StringIO()
+        n = export_csv(self._records(), out)
+        self.assertEqual(n, 2)
+        out.seek(0)
+        reader = csv.DictReader(out)
+        rows = list(reader)
+        self.assertEqual(reader.fieldnames[0], "ts")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["bot_label"], "bot[1]")
+        self.assertEqual(rows[0]["card_name"], "Hatsune Miku")
+        self.assertEqual(rows[0]["hearts"], "512")
+        self.assertEqual(rows[0]["score"], "0.8735")
+        self.assertEqual(rows[0]["success"], "1")
+        self.assertEqual(rows[1]["success"], "0")
+        self.assertEqual(rows[1]["error_code"], "429")
+        # Nullables become empty strings, never the literal "None".
+        self.assertEqual(rows[1]["card_name"], "")
+        self.assertEqual(rows[1]["hearts"], "")
+        self.assertEqual(rows[1]["score"], "")
+
+    def test_iso_ts_column_matches_ts(self):
+        out = io.StringIO()
+        export_csv(self._records(), out)
+        out.seek(0)
+        rows = list(csv.DictReader(out))
+        self.assertEqual(
+            rows[0]["iso_ts"],
+            datetime.fromtimestamp(1_700_000_000).isoformat(timespec="seconds"),
+        )
+
+    def test_empty_input_writes_header_only(self):
+        out = io.StringIO()
+        n = export_csv([], out)
+        self.assertEqual(n, 0)
+        out.seek(0)
+        content = out.read()
+        self.assertTrue(content.startswith("ts,iso_ts,bot_label"))
+        self.assertEqual(len(content.splitlines()), 1)
 
 
 if __name__ == "__main__":
