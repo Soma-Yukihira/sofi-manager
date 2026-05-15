@@ -20,7 +20,7 @@ from typing import Any, ClassVar, Literal
 
 import customtkinter as ctk
 
-from . import storage, updater, version
+from . import changelog, storage, updater, version
 from .bot_core import SelfBot, default_config, sanitize_config
 from .crypto import decrypt_token, encrypt_token
 from .paths import bundle_dir as _bundle_dir
@@ -1068,7 +1068,7 @@ class SelfbotManagerApp(ctk.CTk):
         ctk.CTkButton(
             btns,
             text="Voir les changements",
-            command=self._open_compare_page,
+            command=self._open_changelog_modal,
             fg_color=T["text_on_accent"],
             hover_color=T["bg"],
             text_color=T["accent"],
@@ -1097,13 +1097,195 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
-    def _open_compare_page(self) -> None:
+    def _open_changelog_modal(self) -> None:
+        """In-app modal listing commits between the previous and current SHA.
+
+        The compare-URL fallback stays available as a button so users
+        can hop to GitHub when the API is rate-limited / offline or
+        when they want the diff view.
+        """
         old = self._post_update_old_sha
         new = self.version_info.sha
         if not old or not new:
             return
+
+        T = self.theme
+        win = ctk.CTkToplevel(self)
+        win.title("Changements")
+        win.geometry("680x560")
+        win.configure(fg_color=T["bg"])
+        win.transient(self)
         try:
-            webbrowser.open(version.compare_url(old, new), new=2)
+            win.grab_set()
+        except Exception:
+            pass
+
+        ctk.CTkLabel(
+            win,
+            text="CHANGEMENTS",
+            text_color=T["accent"],
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(anchor="w", padx=24, pady=(20, 4))
+        ctk.CTkLabel(
+            win,
+            text=f"{old[:7]} → {new[:7]}",
+            text_color=T["text_dim"],
+            font=ctk.CTkFont(family="Consolas", size=11),
+        ).pack(anchor="w", padx=24, pady=(0, 14))
+
+        scroll = ctk.CTkScrollableFrame(
+            win,
+            fg_color="transparent",
+            scrollbar_button_color=T["accent_dim"],
+            scrollbar_button_hover_color=T["accent"],
+        )
+        scroll.pack(fill="both", expand=True, padx=18, pady=(0, 8))
+
+        loading = ctk.CTkLabel(
+            scroll,
+            text="Chargement…",
+            text_color=T["text_dim"],
+            font=ctk.CTkFont(size=12),
+        )
+        loading.pack(anchor="w", padx=6, pady=8)
+
+        cmp_url = version.compare_url(old, new)
+
+        bar = ctk.CTkFrame(win, fg_color="transparent")
+        bar.pack(fill="x", padx=24, pady=(8, 18))
+        self._mk_button(
+            bar,
+            "Voir sur GitHub",
+            command=lambda: self._safe_open_url(cmp_url),
+            variant="default",
+            width=160,
+        ).pack(side="left")
+        self._mk_button(
+            bar,
+            "Fermer",
+            command=win.destroy,
+            variant="ghost",
+            width=100,
+        ).pack(side="right", padx=(8, 0))
+
+        def render(result: changelog.ChangelogResult) -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                loading.destroy()
+            except Exception:
+                pass
+            if not result.ok:
+                ctk.CTkLabel(
+                    scroll,
+                    text=result.error,
+                    text_color=T["error"],
+                    font=ctk.CTkFont(size=12),
+                    anchor="w",
+                    justify="left",
+                ).pack(anchor="w", padx=6, pady=8)
+                return
+            if not result.entries:
+                ctk.CTkLabel(
+                    scroll,
+                    text="Aucun changement.",
+                    text_color=T["text_dim"],
+                    font=ctk.CTkFont(size=12),
+                ).pack(anchor="w", padx=6, pady=8)
+                return
+            for entry in result.entries:
+                self._render_changelog_entry(scroll, entry)
+
+        def worker() -> None:
+            result = changelog.fetch_changelog(old, new)
+            try:
+                self.after(0, lambda: render(result))
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, name="changelog-fetch", daemon=True).start()
+
+    def _render_changelog_entry(self, parent: Any, entry: changelog.ChangelogEntry) -> None:
+        """One commit row: caret + title (clickable). Body collapses below."""
+        T = self.theme
+        row = ctk.CTkFrame(parent, fg_color=T["panel"], corner_radius=4)
+        row.pack(fill="x", pady=3, padx=2)
+
+        header = ctk.CTkFrame(row, fg_color="transparent")
+        header.pack(fill="x", padx=8, pady=6)
+
+        body_holder: dict[str, Any] = {"frame": None, "open": False}
+        has_body = bool(entry.body.strip())
+
+        caret = ctk.CTkLabel(
+            header,
+            text="▸ " if has_body else "  ",
+            text_color=T["accent"] if has_body else T["text_dim"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=18,
+        )
+        caret.pack(side="left")
+
+        title = ctk.CTkLabel(
+            header,
+            text=entry.title,
+            text_color=T["text"],
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+        )
+        title.pack(side="left", fill="x", expand=True, padx=(4, 8))
+        try:
+            title.configure(cursor="hand2")
+        except Exception:
+            pass
+
+        sha_label = ctk.CTkLabel(
+            header,
+            text=entry.sha,
+            text_color=T["text_dim"],
+            font=ctk.CTkFont(family="Consolas", size=11),
+        )
+        sha_label.pack(side="right")
+
+        title.bind("<Button-1>", lambda _e: self._safe_open_url(entry.html_url))
+
+        if has_body:
+            try:
+                caret.configure(cursor="hand2")
+            except Exception:
+                pass
+
+            def toggle(_event: Any = None) -> None:
+                if body_holder["open"]:
+                    frame = body_holder["frame"]
+                    if frame is not None:
+                        frame.pack_forget()
+                    caret.configure(text="▸ ")
+                    body_holder["open"] = False
+                    return
+                frame = body_holder["frame"]
+                if frame is None:
+                    frame = ctk.CTkFrame(row, fg_color="transparent")
+                    ctk.CTkLabel(
+                        frame,
+                        text=entry.body,
+                        text_color=T["text_dim"],
+                        font=ctk.CTkFont(size=11),
+                        anchor="w",
+                        justify="left",
+                        wraplength=580,
+                    ).pack(anchor="w", padx=30, pady=(0, 6))
+                    body_holder["frame"] = frame
+                frame.pack(fill="x")
+                caret.configure(text="▾ ")
+                body_holder["open"] = True
+
+            caret.bind("<Button-1>", toggle)
+
+    def _safe_open_url(self, url: str) -> None:
+        try:
+            webbrowser.open(url, new=2)
         except Exception:
             pass
 
