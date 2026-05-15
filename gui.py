@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
-from tkinter import colorchooser, messagebox
+from tkinter import colorchooser, filedialog, messagebox
 from typing import Any
 
 import customtkinter as ctk
@@ -1021,6 +1021,7 @@ class SelfbotManagerApp(ctk.CTk):
             text_color=T["accent"],
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(side="left")
+        # Reverse pack order: ↻ Refresh ends up rightmost, filter dropdown leftmost.
         self._mk_button(
             head,
             "↻  Refresh",
@@ -1028,6 +1029,34 @@ class SelfbotManagerApp(ctk.CTk):
             variant="ghost",
             width=90,
         ).pack(side="right")
+        self._mk_button(
+            head,
+            "↓  CSV",
+            command=self._export_stats_csv,
+            variant="ghost",
+            width=80,
+        ).pack(side="right", padx=(0, 4))
+        self._stats_filter_all = "Tous les bots"
+        self.stats_bot_filter_var = tk.StringVar(value=self._stats_filter_all)
+        self.stats_bot_filter = ctk.CTkOptionMenu(
+            head,
+            values=[self._stats_filter_all],
+            variable=self.stats_bot_filter_var,
+            command=lambda _v: self._refresh_stats(),
+            width=180,
+            height=28,
+            corner_radius=4,
+            fg_color=T["panel"],
+            button_color=T["accent_dim"],
+            button_hover_color=T["accent"],
+            text_color=T["text"],
+            dropdown_fg_color=T["panel"],
+            dropdown_hover_color=T["panel_hover"],
+            dropdown_text_color=T["text"],
+            font=ctk.CTkFont(size=11),
+            dropdown_font=ctk.CTkFont(size=11),
+        )
+        self.stats_bot_filter.pack(side="right", padx=(0, 8))
 
         # KPI row
         self.stats_kpi_widgets: dict[str, ctk.CTkLabel] = {}
@@ -1088,6 +1117,12 @@ class SelfbotManagerApp(ctk.CTk):
             text_color=T["accent"],
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(side="left")
+        ctk.CTkLabel(
+            chart_head,
+            text="cliquez une barre pour voir les grabs du jour",
+            text_color=T["text_dim"],
+            font=ctk.CTkFont(size=10, slant="italic"),
+        ).pack(side="right")
 
         # Plain tk.Canvas — CustomTkinter has no chart widget. ~30 lines of
         # bar-drawing keeps the bundle slim (no matplotlib in PyInstaller).
@@ -1099,9 +1134,12 @@ class SelfbotManagerApp(ctk.CTk):
         )
         self.stats_canvas.pack(fill="both", expand=True, padx=18, pady=(4, 16))
         self.stats_canvas.bind("<Configure>", lambda _e: self._redraw_stats_chart())
+        self.stats_canvas.bind("<Button-1>", self._on_stats_chart_click)
 
         # Cached so resizes / refreshes can redraw without re-querying SQLite.
         self._stats_last: storage.Stats | None = None
+        # Hit-test boxes populated by _redraw_stats_chart: (x0, x1, bucket_ts).
+        self._stats_bar_hits: list[tuple[float, float, int]] = []
 
     def _on_tab_changed(self) -> None:
         if not hasattr(self, "tabs"):
@@ -1130,9 +1168,30 @@ class SelfbotManagerApp(ctk.CTk):
             self._refresh_stats()
             self._schedule_stats_refresh()
 
-    def _refresh_stats(self) -> None:
+    def _current_bot_filter(self) -> str | None:
+        """`None` → tous les bots, sinon le label sélectionné dans le dropdown."""
+        selected = self.stats_bot_filter_var.get()
+        if selected == self._stats_filter_all:
+            return None
+        return selected
+
+    def _sync_bot_filter_values(self) -> None:
+        """Refresh dropdown options from the DB, preserving selection if possible."""
         try:
-            records = list(storage.iter_grabs())
+            labels = storage.distinct_bot_labels()
+        except Exception:
+            labels = []
+        values = [self._stats_filter_all, *labels]
+        current = self.stats_bot_filter_var.get()
+        self.stats_bot_filter.configure(values=values)
+        if current not in values:
+            self.stats_bot_filter_var.set(self._stats_filter_all)
+
+    def _refresh_stats(self) -> None:
+        self._sync_bot_filter_values()
+        bot_filter = self._current_bot_filter()
+        try:
+            records = list(storage.iter_grabs(bot_label=bot_filter))
         except Exception as e:
             self.stats_kpi_widgets["total"].configure(text="—")
             self.stats_kpi_widgets["success_rate"].configure(text=f"DB error\n{type(e).__name__}")
@@ -1177,6 +1236,7 @@ class SelfbotManagerApp(ctk.CTk):
             return
         canvas = self.stats_canvas
         canvas.delete("all")
+        self._stats_bar_hits = []
         T = self.theme
 
         width = max(canvas.winfo_width(), 200)
@@ -1230,6 +1290,9 @@ class SelfbotManagerApp(ctk.CTk):
             y1 = pad_top + plot_h
             color = T["accent"] if count else T["panel_hover"]
             canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
+            # Hit-test box spans the full plot height — clicking above an empty
+            # bar still opens the day modal ("aucun grab" is useful feedback).
+            self._stats_bar_hits.append((x0, x1, bucket_ts))
             if count:
                 canvas.create_text(
                     (x0 + x1) / 2,
@@ -1248,6 +1311,126 @@ class SelfbotManagerApp(ctk.CTk):
                     fill=T["text_dim"],
                     font=("Segoe UI", 9),
                 )
+
+    def _on_stats_chart_click(self, event: tk.Event[tk.Misc]) -> None:
+        for x0, x1, bucket_ts in self._stats_bar_hits:
+            if x0 <= event.x <= x1:
+                self._open_grabs_for_day(bucket_ts)
+                return
+
+    def _open_grabs_for_day(self, bucket_ts: int) -> None:
+        T = self.theme
+        day_start = bucket_ts
+        day_end = bucket_ts + 86_399  # inclusive upper bound for iter_grabs
+        day_str = datetime.fromtimestamp(bucket_ts).strftime("%d/%m/%Y")
+        bot_filter = self._current_bot_filter()
+
+        win = ctk.CTkToplevel(self)
+        scope = bot_filter or "tous bots"
+        win.title(f"Grabs du {day_str} — {scope}")
+        win.geometry("720x460")
+        win.configure(fg_color=T["bg"])
+        win.transient(self)
+        try:
+            win.grab_set()
+        except Exception:
+            pass
+
+        head = ctk.CTkFrame(win, fg_color="transparent")
+        head.pack(fill="x", padx=20, pady=(18, 6))
+        ctk.CTkFrame(head, fg_color=T["accent"], width=3, height=16).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(
+            head,
+            text=f"GRABS DU {day_str}  ·  {scope.upper()}",
+            text_color=T["accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left")
+
+        body = ctk.CTkTextbox(
+            win,
+            fg_color=T["panel"],
+            text_color=T["text"],
+            border_color=T["border"],
+            border_width=1,
+            corner_radius=6,
+            font=ctk.CTkFont(family="Consolas", size=11),
+            wrap="none",
+        )
+        body.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+
+        try:
+            records = list(
+                storage.iter_grabs(
+                    bot_label=bot_filter,
+                    since_ts=day_start,
+                    until_ts=day_end,
+                )
+            )
+        except Exception as e:
+            body.insert("end", f"Erreur DB : {type(e).__name__} — {e}\n")
+            body.configure(state="disabled")
+            return
+
+        if not records:
+            body.insert("end", "Aucun grab enregistré ce jour.\n")
+            body.configure(state="disabled")
+            return
+
+        ok_count = sum(1 for r in records if r.success)
+        body.insert(
+            "end",
+            f"{len(records)} tentatives — {ok_count} succès, {len(records) - ok_count} échecs\n",
+        )
+        body.insert("end", "-" * 96 + "\n")
+        # iter_grabs returns newest first; flip to chronological for readability.
+        for r in reversed(records):
+            t = datetime.fromtimestamp(r.ts).strftime("%H:%M:%S")
+            mark = "✓" if r.success else "✗"
+            if r.success:
+                body.insert(
+                    "end",
+                    f"{t}  {mark}  {r.bot_label:<10}  "
+                    f"{(r.card_name or '-'):<26}  "
+                    f"[{(r.series or '-'):<18}]  "
+                    f"{(r.rarity or '-'):<4}  "
+                    f"♥{r.hearts if r.hearts is not None else '-'}\n",
+                )
+            else:
+                body.insert(
+                    "end",
+                    f"{t}  {mark}  {r.bot_label:<10}  err={r.error_code or '?'}\n",
+                )
+        body.configure(state="disabled")
+
+    def _export_stats_csv(self) -> None:
+        default_name = f"sofi-grabs-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
+        scope = self._current_bot_filter()
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Exporter les grabs en CSV",
+            defaultextension=".csv",
+            initialfile=default_name,
+            filetypes=[("CSV", "*.csv"), ("Tous fichiers", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            records = list(storage.iter_grabs(bot_label=scope))
+        except Exception as e:
+            messagebox.showerror("Export CSV", f"Lecture DB impossible : {type(e).__name__}\n{e}")
+            return
+        try:
+            # utf-8-sig so Excel detects the encoding without prompting.
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                n = storage.export_csv(records, f)
+        except OSError as e:
+            messagebox.showerror("Export CSV", f"Écriture impossible : {e}")
+            return
+        scope_str = scope or "tous bots"
+        messagebox.showinfo(
+            "Export CSV",
+            f"{n} grabs exportés ({scope_str}).\n\n{path}",
+        )
 
     # ---------- Empty / select state ----------
 

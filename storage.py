@@ -9,6 +9,7 @@ un bug ici ne doit jamais casser un grab en vol.
 
 from __future__ import annotations
 
+import csv
 import os
 import sqlite3
 import sys
@@ -19,6 +20,7 @@ from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TextIO
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS grabs (
@@ -179,6 +181,62 @@ def iter_grabs(
     with closing(_connect(resolved)) as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     return iter([_row_to_record(r) for r in rows])
+
+
+def distinct_bot_labels(path: Path | None = None) -> list[str]:
+    """Liste triée des bot_label rencontrés. Vide si la DB n'existe pas encore."""
+    resolved = path if path is not None else default_db_path()
+    if not resolved.exists():
+        return []
+    with closing(_connect(resolved)) as conn:
+        rows = conn.execute("SELECT DISTINCT bot_label FROM grabs ORDER BY bot_label").fetchall()
+    return [str(r["bot_label"]) for r in rows]
+
+
+# Order chosen to be readable when opened directly in Excel/LibreOffice.
+_CSV_COLUMNS = (
+    "ts",
+    "iso_ts",
+    "bot_label",
+    "channel_id",
+    "card_name",
+    "series",
+    "rarity",
+    "hearts",
+    "score",
+    "success",
+    "error_code",
+)
+
+
+def export_csv(records: Iterable[GrabRecord], out: TextIO) -> int:
+    """Écrit les records dans `out` au format CSV (header inclus).
+
+    Caller owns the file: open it with `newline=""` and `encoding="utf-8"`
+    (or `utf-8-sig` for Excel compatibility). Returns the number of data
+    rows written, so the GUI can show "Exporté N grabs".
+    """
+    writer = csv.DictWriter(out, fieldnames=_CSV_COLUMNS)
+    writer.writeheader()
+    count = 0
+    for r in records:
+        writer.writerow(
+            {
+                "ts": r.ts,
+                "iso_ts": datetime.fromtimestamp(r.ts).isoformat(timespec="seconds"),
+                "bot_label": r.bot_label,
+                "channel_id": "" if r.channel_id is None else r.channel_id,
+                "card_name": r.card_name or "",
+                "series": r.series or "",
+                "rarity": r.rarity or "",
+                "hearts": "" if r.hearts is None else r.hearts,
+                "score": "" if r.score is None else f"{r.score:.4f}",
+                "success": 1 if r.success else 0,
+                "error_code": r.error_code or "",
+            }
+        )
+        count += 1
+    return count
 
 
 # ---------------------------------------------------------------------------
