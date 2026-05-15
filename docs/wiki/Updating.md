@@ -23,17 +23,17 @@ Click **Redémarrer** and the app:
 The `bots.json` and `settings.json` files are gitignored, so they are
 never touched by the pull.
 
-## Safety rails
+## Safety rails (git-pull path)
 
-The updater **refuses to touch the tree** when any of the following
-holds:
+The git-pull path **refuses to touch the tree** when:
 
-- `.git/` is absent (you installed from a ZIP or shipped `.exe`).
 - The current branch is not `main`.
 - You have local commits ahead of `origin/main`.
 - Tracked files have uncommitted modifications.
 
-In any of those cases the banner is simply not shown.
+In those cases no banner appears — they are developer states, and the
+on-demand check in the menu surfaces them when needed. The
+`.git/`-absent and frozen-`.exe` cases follow their own paths, below.
 
 ## CLI alternative
 
@@ -47,8 +47,19 @@ Refreshes pip dependencies if `requirements.txt` changed and prints a
 clean diff summary. Useful on a VPS, in `tmux`, or as a fallback when
 the GUI can't reach the network.
 
-## ZIP / `.exe` users
+## ZIP installs (no `.git/`)
 
-These installs have no `.git/`, so the auto-updater is inert. To get
-a newer build, re-download the source (or rebuild the executable from
-a fresh clone via `python tools/build.py`).
+The updater falls back to a codeload path. It fetches the current
+`main` SHA from `api.github.com`, downloads the matching ZIP from
+`codeload.github.com`, and overwrites tracked files in place
+(zip-slip guard, strict SHA baseline persisted as `zip_install_sha`
+in `settings.json`). The gold banner and the restart flow are
+identical to the git path. Gitignored files (`bots.json`,
+`settings.json`, `grabs.db`) survive untouched.
+
+## Frozen `.exe`
+
+PyInstaller bundles can't atomically swap their own source files at
+runtime, so the updater short-circuits with skip reason `frozen` and
+the GUI shows a passive amber banner. Action: rebuild from a fresh
+clone via `python tools/build.py`, or switch to a source install.

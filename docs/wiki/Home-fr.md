@@ -31,6 +31,7 @@ rien pour se cacher.
 
 ## Vie privée
 
-- Les tokens restent dans `bots.json` sur ton disque. Jamais transmis.
-- Aucune télémétrie, aucun analytics, aucune auto-update.
-- Les seuls appels réseau vont à Discord, via `discord.py-self`.
+- Les tokens restent dans `bots.json` sur ton disque, chiffrés en Fernet. Jamais transmis.
+- Aucune télémétrie, aucun analytics.
+- Trafic sortant : Discord (ops du selfbot) et GitHub (vérif de mise à
+  jour en arrière-plan). Rien d'autre.

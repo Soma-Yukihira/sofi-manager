@@ -109,19 +109,6 @@ ou clic droit → *Épingler à la barre des tâches*.
 Si aucun build n'est présent, le raccourci retombe sur le couple
 `pythonw.exe` + `main.py` du venv, comme avant.
 
-## Publication
-
-Pour l'instant, les releases sont manuelles :
-
-1. Mettre à jour le changelog (si tu en tiens un).
-2. `python tools/build.py --clean`
-3. Zipper `dist/SelfbotManager/` en
-   `SelfbotManager-vX.Y.Z-win64.zip`.
-4. Uploader comme asset d'une GitHub Release sur le tag.
-
-Pas d'installeur, pas d'auto-update. Volonté assumée de transparence
-totale.
-
 ## Notes antivirus
 
 Les apps bundlées via PyInstaller sont parfois flaggées par Windows

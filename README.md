@@ -97,12 +97,17 @@ Redémarrez pour appliquer*. Click **Redémarrer** and the app applies
 code. No release file, no manual step — every commit on `main` is a
 release.
 
-The auto-updater stays out of your way:
-- Skips entirely when `.git/` is absent (ZIP / `.exe` installs).
-- Skips when you have local commits ahead of `origin/main`, or
-  uncommitted changes to tracked files.
-- Your `bots.json` and `settings.json` are gitignored, so they survive
-  every update untouched.
+The auto-updater adapts to your install:
+- **Git clone** — `git pull --ff-only origin main`, then re-exec.
+- **ZIP download** (no `.git/`) — fetches `main` from
+  `codeload.github.com` and overwrites tracked files in place. Same
+  banner, same restart flow.
+- **Frozen `.exe`** — skipped; a passive amber banner points at a
+  rebuild from a fresh clone.
+- Also skipped on a non-`main` branch, with local commits ahead, or
+  with uncommitted tracked-file modifications.
+- `bots.json`, `settings.json` and `grabs.db` are gitignored — they
+  survive every update untouched.
 
 **Manual update** (verbose CLI summary, also useful on a VPS):
 

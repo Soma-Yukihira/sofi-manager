@@ -104,18 +104,6 @@ or right-click → *Pin to taskbar*.
 If no build is present, the shortcut falls back to the venv `pythonw.exe`
 + `main.py` source install, exactly like before.
 
-## Releasing
-
-For now, releases are manual:
-
-1. Bump version notes in the changelog (if you keep one).
-2. `python tools/build.py --clean`
-3. Zip `dist/SelfbotManager/` into `SelfbotManager-vX.Y.Z-win64.zip`.
-4. Upload as a GitHub Release asset against the tag.
-
-No installer, no auto-update. The point is full transparency about what
-runs.
-
 ## Antivirus notes
 
 PyInstaller-bundled apps are sometimes flagged by Windows Defender or

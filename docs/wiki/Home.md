@@ -29,6 +29,7 @@ enforcement. It logs everything it does and makes no attempt to hide.
 
 ## Privacy
 
-- Tokens stay in `bots.json` on your disk. Never transmitted.
-- No telemetry, no analytics, no auto-updates.
-- The only network calls are to Discord, made by `discord.py-self`.
+- Tokens stay in `bots.json` on your disk, Fernet-encrypted. Never transmitted.
+- No telemetry, no analytics.
+- Outbound traffic: Discord (selfbot ops) and GitHub (background update
+  check). Nothing else.

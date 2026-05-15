@@ -109,16 +109,24 @@ moment it lands.
 
 ### Safety rails
 
-The updater **refuses to touch the tree** when:
+The git-pull path **refuses to touch the tree** when:
 
-- `.git/` is absent (ZIP / `.exe` user — they re-clone manually).
 - The current branch is not `main`.
 - `git rev-list @{u}..HEAD` > 0 (local commits ahead — would force a
   merge).
 - `git status --porcelain --untracked-files=no` is non-empty (local
   modifications to tracked files — risk of conflict).
 
-`bots.json` and `settings.json` are gitignored, so they always survive.
+The `.git/`-absent case is no longer a no-op: `apply_zip_update`
+fetches `codeload.github.com/<repo>/zip/refs/heads/main`, validates it
+(zip-slip guard, strict SHA baseline persisted as `zip_install_sha`
+in `settings.json`), and overwrites tracked files in place. Frozen
+`.exe` is the only structurally un-updatable case — it surfaces an
+amber banner via `_maybe_show_skip_reason_banner` pointing at a
+rebuild.
+
+`bots.json`, `settings.json` and `grabs.db` are gitignored, so they
+always survive.
 
 ### CLI alternative
 
