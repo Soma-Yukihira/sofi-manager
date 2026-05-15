@@ -7,9 +7,19 @@ Petit tour pour qui veut forker ou étendre le projet.
 ## Fichiers
 
 ```
-main.py        ← point d'entrée, appelle juste gui.run()
-gui.py         ← toute l'UI : système thèmes, sidebar, tabs, logs, modale
-bot_core.py    ← classe SelfBot, parsing, scoring, aucun import UI
+main.py        ← Entrée GUI. Lance apply_pending_on_startup() avant
+                  d'importer gui, puis gui.run().
+cli.py         ← Entrée headless / VPS. Partage le même cœur.
+gui.py         ← UI CustomTkinter : système thèmes, sidebar, tabs,
+                  logs, modales, bandeau update.
+bot_core.py    ← Classe SelfBot. Parsing + scoring SOFI. Logique pure.
+updater.py     ← Auto-updater : fast-forward git, fallback ZIP
+                  codeload, classifieur skip_reason (5 états).
+crypto.py      ← Chiffrement Fernet des tokens. Clé dans le keyring OS
+                  avec fallback fichier.
+paths.py       ← Résolution bundle_dir() / user_dir(). Source de
+                  vérité pour les chemins source-vs-frozen.
+storage.py     ← Historique SQLite des grabs (WAL). Migration legacy.
 ```
 
 Le split est enforced par convention :
@@ -17,9 +27,8 @@ Le split est enforced par convention :
 - `bot_core.py` n'importe **rien** d'UI.
 - `gui.py` n'importe **pas** `discord`. Il connaît juste `SelfBot`,
   `default_config()` et les helpers de parsing.
-
-Conséquence : tu peux livrer une variante CLI en écrivant un `cli.py` qui
-utilise `SelfBot` directement.
+- `cli.py` est la preuve que le cœur est UI-agnostique : il instancie
+  `SelfBot` directement, sans dépendance Tk.
 
 ## Modèle de threading
 
@@ -93,12 +102,42 @@ EN (`dropping cards`) — étends-le si SOFI ajoute d'autres langues.
 
 ## Persistance
 
-| Fichier         | Owner    | Notes                                          |
-| --------------- | -------- | ---------------------------------------------- |
-| `bots.json`     | `gui.py` | Array de configs. Créé au premier ajout.       |
-| `settings.json` | `gui.py` | Prefs UI (mode thème + overrides couleurs).    |
+| Fichier         | Owner                | Notes                                       |
+| --------------- | -------------------- | ------------------------------------------- |
+| `bots.json`     | `gui.py` / `cli.py`  | Configs bot. Tokens chiffrés en Fernet via `crypto.py`. |
+| `settings.json` | `gui.py`             | Prefs thème + état updater (`zip_install_sha`). |
+| `grabs.db`      | `storage.py`         | Historique SQLite (WAL). `USER_DIR/grabs.db` par défaut, override avec `SOFI_DB_PATH`. Chemins legacy `%APPDATA%` / XDG migrés au premier lancement. |
 
-Les deux sont gitignorés.
+Les trois sont gitignorés — ils survivent à chaque update.
+
+## Flux d'update
+
+`updater.skip_reason()` classe l'install dans l'un des cinq cas. La
+GUI branche dessus :
+
+```
+                  ┌── None      → chemin git : git pull --ff-only,
+                  │               re-exec au clic "Redémarrer".
+                  │
+                  ├── no-git    → chemin ZIP : fetch codeload +
+                  │               écrasement via _apply_zip_bytes,
+   skip_reason() ─┤               même bandeau, baseline persistée
+                  │               en zip_install_sha dans
+                  │               settings.json.
+                  │
+                  ├── frozen    → bandeau ambre seulement. Les
+                  │               bundles PyInstaller ne peuvent pas
+                  │               swap atomiquement leurs sources.
+                  │
+                  └── off-main  → silencieux. États dev. Le check à
+                      / dirty     la demande dans le menu les remonte
+                      / ahead     quand on l'invoque.
+```
+
+`apply_pending_on_startup` (appelé depuis `main.py` *avant* `import
+gui`) ne prend que le chemin git — les cas ZIP et frozen sont gérés
+plus tard depuis le thread UI une fois Tk lancé, via
+`check_zip_in_background` et `_maybe_show_skip_reason_banner`.
 
 ## Packaging
 
