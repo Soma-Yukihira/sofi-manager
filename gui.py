@@ -11,11 +11,12 @@ import sys
 import threading
 import tkinter as tk
 import uuid
+import webbrowser
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox
-from typing import Any
+from typing import Any, ClassVar
 
 import customtkinter as ctk
 
@@ -23,6 +24,8 @@ import storage
 import updater
 from bot_core import SelfBot, default_config, sanitize_config
 from crypto import decrypt_token, encrypt_token
+
+WIKI_UPDATING_URL = "https://github.com/Soma-Yukihira/sofi-manager/wiki/Updating-fr"
 
 # =============================================
 # PyInstaller-safe paths
@@ -356,6 +359,10 @@ class SelfbotManagerApp(ctk.CTk):
         # The callback marshals back to the Tk thread via `self.after`.
         updater.check_in_background(lambda n: self.after(0, self._show_update_banner, n))
 
+        # Surface a passive amber banner for .exe / ZIP users whose installs
+        # will never auto-update. Deferred so the layout is settled first.
+        self.after(0, self._maybe_show_skip_reason_banner)
+
     # ---------- thème ----------
 
     def _apply_appearance(self) -> None:
@@ -591,6 +598,9 @@ class SelfbotManagerApp(ctk.CTk):
         try:
             self.update_banner_label.configure(text=msg)
             self.update_banner.grid()
+            # Gold > amber: hide the skip-reason banner if it was up.
+            if hasattr(self, "skip_banner"):
+                self.skip_banner.grid_remove()
         except Exception:
             pass
 
@@ -652,6 +662,104 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
+    # ---------- Skip-reason banner ----------
+
+    # Reasons that warrant a passive banner. Dev cases ("off-main", "dirty",
+    # "ahead") are intentionally excluded: devs are already aware, and
+    # `_check_updates_now` surfaces them on demand.
+    _SKIP_BANNER_REASONS: ClassVar[dict[str, str]] = {
+        "frozen": (
+            "  Installation .exe : les mises a jour automatiques sont desactivees. "
+            "Telechargez la derniere version pour rester a jour."
+        ),
+        "no-git": (
+            "  Installation sans .git : les mises a jour automatiques sont desactivees. "
+            "Re-clonez le depot pour activer les MAJ."
+        ),
+    }
+
+    def _build_skip_reason_banner(self, parent: Any) -> None:
+        """
+        Amber strip above the top bar, hidden until the updater reports it
+        cannot fast-forward this install. Same grid slot as the gold update
+        banner - the two are mutually exclusive (gold takes priority).
+        """
+        T = self.theme
+        self.skip_banner = ctk.CTkFrame(
+            parent,
+            fg_color=T["warn"],
+            corner_radius=0,
+            height=38,
+        )
+        self.skip_banner.grid(row=0, column=0, sticky="ew")
+        self.skip_banner.grid_propagate(False)
+        self.skip_banner.grid_columnconfigure(0, weight=1)
+
+        self.skip_banner_label = ctk.CTkLabel(
+            self.skip_banner,
+            text="",
+            text_color=T["text_on_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.skip_banner_label.grid(row=0, column=0, sticky="w", padx=18)
+
+        btns = ctk.CTkFrame(self.skip_banner, fg_color="transparent")
+        btns.grid(row=0, column=1, sticky="e", padx=10, pady=4)
+        ctk.CTkButton(
+            btns,
+            text="Plus tard",
+            command=self._dismiss_skip_reason_banner,
+            fg_color="transparent",
+            hover_color=T["accent_bright"],
+            text_color=T["text_on_accent"],
+            border_width=0,
+            width=80,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(side="right", padx=4)
+        ctk.CTkButton(
+            btns,
+            text="Aide",
+            command=self._on_skip_reason_help,
+            fg_color=T["text_on_accent"],
+            hover_color=T["bg"],
+            text_color=T["warn"],
+            border_width=0,
+            width=80,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(side="right", padx=4)
+
+        self.skip_banner.grid_remove()
+
+    def _maybe_show_skip_reason_banner(self) -> None:
+        try:
+            reason = updater.skip_reason()
+        except Exception:
+            return
+        if reason not in self._SKIP_BANNER_REASONS:
+            return
+        # Defer to gold if it is already visible (it just arrived async).
+        try:
+            if self.update_banner.winfo_ismapped():
+                return
+            self.skip_banner_label.configure(text=self._SKIP_BANNER_REASONS[reason])
+            self.skip_banner.grid()
+        except Exception:
+            pass
+
+    def _dismiss_skip_reason_banner(self) -> None:
+        try:
+            self.skip_banner.grid_remove()
+        except Exception:
+            pass
+
+    def _on_skip_reason_help(self) -> None:
+        try:
+            webbrowser.open(WIKI_UPDATING_URL, new=2)
+        except Exception:
+            messagebox.showinfo("Aide", WIKI_UPDATING_URL)
+
     def _on_update_restart(self) -> None:
         # Persist current form/state before re-execing, just like _on_close.
         if self.selected_id:
@@ -680,6 +788,8 @@ class SelfbotManagerApp(ctk.CTk):
 
         # --- Update banner (hidden until updater finds new commits) ---
         self._build_update_banner(main)
+        # --- Skip-reason banner (hidden unless .exe / no-git install) ---
+        self._build_skip_reason_banner(main)
 
         # --- Top bar ---
         top = ctk.CTkFrame(main, fg_color=T["panel"], corner_radius=0, height=72)
