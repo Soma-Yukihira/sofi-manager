@@ -137,12 +137,12 @@ def test_from_git_handles_git_not_installed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _from_zip_sha
+# _from_zip
 # ---------------------------------------------------------------------------
 
 
-def test_from_zip_sha_truncates_to_seven_chars() -> None:
-    v = version._from_zip_sha("abcdef0123456789abcdef0123456789abcdef01")
+def test_from_zip_truncates_to_seven_chars() -> None:
+    v = version._from_zip("abcdef0123456789abcdef0123456789abcdef01")
     assert v is not None
     assert v.sha == "abcdef0"
     assert v.source == "zip"
@@ -150,9 +150,22 @@ def test_from_zip_sha_truncates_to_seven_chars() -> None:
     assert v.date == ""
 
 
-def test_from_zip_sha_returns_none_on_empty() -> None:
-    assert version._from_zip_sha(None) is None
-    assert version._from_zip_sha("") is None
+def test_from_zip_returns_none_on_empty() -> None:
+    assert version._from_zip(None) is None
+    assert version._from_zip("") is None
+
+
+def test_from_zip_carries_count_and_date_when_provided() -> None:
+    v = version._from_zip("abcdef0123", zip_count=58, zip_date="2026-05-15")
+    assert v == version.VersionInfo(count=58, sha="abcdef0", date="2026-05-15", source="zip")
+
+
+def test_from_zip_ignores_non_int_count_and_non_str_date() -> None:
+    # Defensive: settings.json could be hand-edited with garbage types.
+    v = version._from_zip("abcdef0123", zip_count="58", zip_date=None)  # type: ignore[arg-type]
+    assert v is not None
+    assert v.count is None
+    assert v.date == ""
 
 
 # ---------------------------------------------------------------------------

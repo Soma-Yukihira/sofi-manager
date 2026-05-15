@@ -43,6 +43,10 @@ SkipReason = Literal["frozen", "no-git", "off-main", "dirty", "ahead"]
 
 _OWNER_REPO = "Soma-Yukihira/sofi-manager"
 _GITHUB_API_LATEST_SHA = f"https://api.github.com/repos/{_OWNER_REPO}/commits/main"
+# Pagination trick: requesting commits with per_page=1 makes the Link
+# header's `rel="last"` page number equal to the total commit count
+# reachable from `main` - the API has no direct "count commits" endpoint.
+_GITHUB_API_COMMIT_COUNT = f"https://api.github.com/repos/{_OWNER_REPO}/commits?sha=main&per_page=1"
 _CODELOAD_ZIP_URL = f"https://codeload.github.com/{_OWNER_REPO}/zip/refs/heads/main"
 _USER_AGENT = "sofi-manager-updater"
 _NETWORK_TIMEOUT = 30  # seconds
@@ -299,6 +303,57 @@ def _http_get_json(url: str) -> object:
         return _json.loads(resp.read().decode("utf-8"))
 
 
+def _http_get_link_header(url: str) -> str | None:
+    """GET `url` and return the `Link` response header, or None on failure.
+
+    Used by `fetch_remote_main_count` for the pagination trick - we only
+    care about the headers, not the body, so the body is discarded.
+    """
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": _USER_AGENT, "Accept": "application/vnd.github+json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_NETWORK_TIMEOUT) as resp:
+            return resp.headers.get("Link")
+    except (urllib.error.URLError, OSError):
+        return None
+    except Exception:
+        return None
+
+
+def _parse_last_page(link_header: str | None) -> int | None:
+    """Extract the `page=N` value from the `rel="last"` segment of a GitHub
+    Link header, or None if absent / malformed.
+
+    Example input:
+        <https://api.github.com/...&page=2>; rel="next",
+        <https://api.github.com/...&page=58>; rel="last"
+
+    Returns 58 here. Pure helper - extracted so the pagination logic is
+    testable without a network round-trip.
+    """
+    if not link_header:
+        return None
+    for segment in link_header.split(","):
+        seg = segment.strip()
+        if 'rel="last"' not in seg:
+            continue
+        # Find the URL inside <...>; the page= value lives in its query string.
+        lt = seg.find("<")
+        gt = seg.find(">")
+        if lt < 0 or gt <= lt:
+            continue
+        url = seg[lt + 1 : gt]
+        for part in url.split("?", 1)[-1].split("&"):
+            if part.startswith("page="):
+                try:
+                    return int(part[len("page=") :])
+                except ValueError:
+                    return None
+    return None
+
+
 def _http_get_bytes(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     with urllib.request.urlopen(req, timeout=_NETWORK_TIMEOUT) as resp:
@@ -311,6 +366,44 @@ def fetch_remote_main_sha() -> str | None:
     Failures are silent on purpose: a flaky network or GitHub API rate limit
     must never crash the GUI launch path.
     """
+    info = fetch_remote_main_info()
+    return info["sha"] if info else None
+
+
+def fetch_remote_main_count() -> int | None:
+    """GET the total commit count on `main` via the pagination trick.
+
+    Returns None on any failure (offline, rate-limited, malformed Link
+    header). When the repo has one or fewer commits, GitHub omits the
+    Link header entirely - we treat that as "1" by counting the body.
+    """
+    link = _http_get_link_header(_GITHUB_API_COMMIT_COUNT)
+    n = _parse_last_page(link)
+    if n is not None:
+        return n
+    # No Link header: either a one-commit repo or an error. The /commits
+    # endpoint always returns an array; if it has at least one element,
+    # the count is 1. Fall back via the JSON path.
+    try:
+        body = _http_get_json(_GITHUB_API_COMMIT_COUNT)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    except Exception:
+        return None
+    if isinstance(body, list) and body:
+        return 1
+    return None
+
+
+def fetch_remote_main_info() -> dict | None:
+    """One-shot lookup of `main`'s identification triple (sha, count, date).
+
+    Used by the codeload-mode updater to persist all three to settings
+    so ZIP installs can render `v143 - 727b0af - 2026-05-15` in the
+    sidebar footer just like git-clone installs. Count and date may be
+    None / "" on partial failure - the SHA is the only required field.
+    Returns None when even the SHA lookup fails.
+    """
     try:
         data = _http_get_json(_GITHUB_API_LATEST_SHA)
     except (urllib.error.URLError, OSError, ValueError):
@@ -320,9 +413,20 @@ def fetch_remote_main_sha() -> str | None:
     if not isinstance(data, dict):
         return None
     sha = data.get("sha")
-    if isinstance(sha, str) and len(sha) == 40 and all(c in "0123456789abcdef" for c in sha):
-        return sha
-    return None
+    if not (isinstance(sha, str) and len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)):
+        return None
+    # GitHub's commit payload nests author/committer dates under .commit.
+    date = ""
+    commit_blob = data.get("commit")
+    if isinstance(commit_blob, dict):
+        committer = commit_blob.get("committer")
+        if isinstance(committer, dict):
+            raw_date = committer.get("date")
+            if isinstance(raw_date, str) and len(raw_date) >= 10:
+                # ISO-8601 'YYYY-MM-DDTHH:MM:SSZ' -> 'YYYY-MM-DD'.
+                date = raw_date[:10]
+    count = fetch_remote_main_count()
+    return {"sha": sha, "count": count, "date": date}
 
 
 def _apply_zip_bytes(zip_bytes: bytes, dest: Path) -> tuple[bool, str]:
@@ -363,16 +467,17 @@ def _apply_zip_bytes(zip_bytes: bytes, dest: Path) -> tuple[bool, str]:
     return True, "OK"
 
 
-def apply_zip_update() -> tuple[bool, str, str | None]:
+def apply_zip_update() -> tuple[bool, str, dict | None]:
     """Fetch + extract the latest main ZIP onto this install. Returns
-    `(ok, message, new_sha)`. Callers are expected to persist `new_sha`
-    before re-execing the interpreter so the next launch knows the
-    baseline.
+    `(ok, message, new_info)` where `new_info` is the
+    `fetch_remote_main_info` dict (`sha`, `count`, `date`). Callers are
+    expected to persist all three to settings before re-execing the
+    interpreter so the next launch's footer shows the full identifier.
     """
     if skip_reason() != "no-git":
         return False, "ZIP update only applies to non-git installs.", None
-    new_sha = fetch_remote_main_sha()
-    if new_sha is None:
+    info = fetch_remote_main_info()
+    if info is None:
         return False, "Impossible de joindre l'API GitHub.", None
     try:
         zip_bytes = _http_get_bytes(_CODELOAD_ZIP_URL)
@@ -381,20 +486,27 @@ def apply_zip_update() -> tuple[bool, str, str | None]:
     ok, msg = _apply_zip_bytes(zip_bytes, ROOT)
     if not ok:
         return False, msg, None
-    return True, "OK", new_sha
+    return True, "OK", info
 
 
 def check_zip_in_background(
     installed_sha: str | None,
-    on_baseline: Callable[[str], None],
-    on_update_available: Callable[[str], None],
+    installed_count: int | None,
+    on_baseline: Callable[[dict], None],
+    on_update_available: Callable[[dict], None],
 ) -> None:
     """Fire-and-forget ZIP-mode check. No-op outside the no-git case.
 
-    Three outcomes:
-      - installed_sha is None  -> `on_baseline(remote)` (first launch).
-      - installed_sha == remote -> silent (up to date).
-      - otherwise               -> `on_update_available(remote)`.
+    Four outcomes:
+      - installed_sha is None
+            -> `on_baseline(info)` (first launch).
+      - installed_sha == remote.sha and installed_count is None
+            -> `on_baseline(info)` (backfill count + date for users who
+               installed before the version-identifier landed).
+      - installed_sha == remote.sha
+            -> silent (up to date, identifier complete).
+      - otherwise
+            -> `on_update_available(info)`.
 
     Callbacks fire on the worker thread; the caller is responsible for
     marshalling to Tk via `root.after(0, ...)`.
@@ -404,13 +516,19 @@ def check_zip_in_background(
 
     def _worker() -> None:
         try:
-            remote = fetch_remote_main_sha()
-            if remote is None:
+            info = fetch_remote_main_info()
+            if info is None:
                 return
+            remote_sha = info["sha"]
             if installed_sha is None:
-                on_baseline(remote)
-            elif installed_sha != remote:
-                on_update_available(remote)
+                on_baseline(info)
+            elif installed_sha != remote_sha:
+                on_update_available(info)
+            elif installed_count is None:
+                # Same SHA but the stored identifier is incomplete —
+                # backfill so the footer shows `v143 · sha` instead of
+                # just `sha`.
+                on_baseline(info)
         except Exception:
             pass
 
