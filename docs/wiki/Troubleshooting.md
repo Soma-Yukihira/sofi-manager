@@ -67,7 +67,7 @@ copy it into an issue.
 The bot waited 10× 0.5s for the buttons to activate but they never did.
 This is rare and usually a Discord blip. The drop is forfeit for that
 cycle. If it's chronic, increase the retry count in
-[`bot_core.py`](../../blob/main/bot_core.py) (`for attempt in range(10)`).
+[`bot_core.py`](../../blob/main/sofi_manager/bot_core.py) (`for attempt in range(10)`).
 
 ---
 

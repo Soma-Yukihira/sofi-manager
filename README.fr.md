@@ -142,21 +142,26 @@ depuis le GUI vers le serveur.
 
 ```
 sofi-manager/
-├── main.py              # Lanceur GUI (hook de mise à jour pré-import)
-├── cli.py               # Lanceur headless / VPS (même cœur)
-├── gui.py               # UI CustomTkinter + thèmes + bandeau update
-├── bot_core.py          # Classe SelfBot + parsing / scoring SOFI
-├── updater.py           # Auto-updater git + ZIP-codeload
-├── crypto.py            # Chiffrement Fernet des tokens (keyring OS)
-├── paths.py             # Résolution bundle_dir() / user_dir()
-├── storage.py           # Historique SQLite + migration legacy DB
+├── main.py              # Shim de lancement GUI (hook update pré-import)
+├── cli.py               # Shim de lancement headless / VPS
+├── sofi_manager/        # Package runtime — tous les modules réellement chargés
+│   ├── gui.py           #   UI CustomTkinter + thèmes + bandeau update
+│   ├── cli.py           #   Sous-commandes CLI (list / show / add / rm / run)
+│   ├── bot_core.py      #   Classe SelfBot + orchestration
+│   ├── parsing.py       #   Parseurs messages SOFI (FR + EN, purs)
+│   ├── scoring.py       #   Scoring cartes + override wishlist (pur)
+│   ├── crypto.py        #   Chiffrement Fernet des tokens (keyring OS)
+│   ├── paths.py         #   Résolution bundle_dir() / user_dir()
+│   ├── storage.py       #   Historique SQLite + migration legacy DB
+│   ├── updater.py       #   Auto-updater git + ZIP-codeload
+│   └── _migrations.py   #   Cleanup one-shot des .py root pre-refactor
 ├── selfbot-manager.spec # Spec PyInstaller (piloté par tools/build.py)
 ├── tools/               # build / update / shortcut / installeur systemd
 ├── assets/app.ico       # Icône ⚜ dorée, embarquée dans le .exe
 ├── requirements.txt     # discord.py-self, customtkinter, curl_cffi
 ├── tests/               # tests unitaires pytest
 ├── docs/
-│   ├── wiki/            # Sources des pages wiki (EN + FR)
+│   ├── wiki/            # Sources des pages wiki (EN + FR, sync auto vers GitHub Wiki)
 │   └── images/          # Bannière + captures
 └── LICENSE              # MIT
 ```

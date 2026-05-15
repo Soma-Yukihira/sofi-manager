@@ -14,8 +14,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-import storage
-from storage import (
+from sofi_manager import storage
+from sofi_manager.storage import (
     GrabRecord,
     compute_stats,
     default_db_path,

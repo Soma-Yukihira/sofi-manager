@@ -21,8 +21,8 @@ from typing import Any
 
 import discord
 
-import storage
-from parsing import (
+from . import storage
+from .parsing import (
     extract_full_text,
     format_drop_recipients,
     is_cooldown_message,
@@ -32,7 +32,7 @@ from parsing import (
     parse_cooldown_seconds,
     smart_parse_cards,
 )
-from scoring import choose_card, score_card
+from .scoring import choose_card, score_card
 
 SOFI_ID = 853629533855809596
 

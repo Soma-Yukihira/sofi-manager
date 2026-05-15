@@ -66,12 +66,13 @@ changement de spec, d'asset ou de `requirements.txt`.
 ## Chemins runtime
 
 L'exe gelé doit lire son icône embarquée d'un côté et écrire sa config
-runtime d'un autre. Deux helpers dans `paths.py` font le tri :
+runtime d'un autre. Deux helpers dans `sofi_manager/paths.py` font le
+tri :
 
-| Helper          | Résout vers (frozen)              | Résout vers (source)         |
-| --------------- | --------------------------------- | ---------------------------- |
-| `bundle_dir()`  | `sys._MEIPASS` (assets read-only) | racine du repo (à côté de `gui.py`) |
-| `user_dir()`    | dossier contenant le .exe         | racine du repo               |
+| Helper          | Résout vers (frozen)              | Résout vers (source)              |
+| --------------- | --------------------------------- | --------------------------------- |
+| `bundle_dir()`  | `sys._MEIPASS` (assets read-only) | racine du repo (à côté de `main.py`) |
+| `user_dir()`    | dossier contenant le .exe         | racine du repo                    |
 
 - **Assets read-only** (`assets/app.ico`, thèmes customtkinter) vivent
   sous `bundle_dir()`. PyInstaller les embarque à la compilation.
@@ -79,8 +80,9 @@ runtime d'un autre. Deux helpers dans `paths.py` font le tri :
   `user_dir()`. L'utilisateur final peut donc éditer/sauvegarder ces
   fichiers à côté de l'exe, exactement comme dans l'install source.
 
-`gui.py`, `cli.py` et `storage.py` importent tous depuis `paths.py` —
-ils partagent la même racine.
+`sofi_manager.gui`, `sofi_manager.cli` et `sofi_manager.storage`
+importent tous depuis `sofi_manager.paths` — ils partagent la même
+racine.
 
 > [!NOTE]
 > Les versions antérieures stockaient `grabs.db` sous

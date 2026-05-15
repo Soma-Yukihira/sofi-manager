@@ -47,7 +47,7 @@ _CODELOAD_ZIP_URL = f"https://codeload.github.com/{_OWNER_REPO}/zip/refs/heads/m
 _USER_AGENT = "sofi-manager-updater"
 _NETWORK_TIMEOUT = 30  # seconds
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 # Suppress console windows on Windows when git is invoked from the GUI
 # (which runs under pythonw.exe / a windowed exe). Without this flag,

@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from cryptography.fernet import Fernet
 
-import crypto
+from sofi_manager import crypto
 
 
 @pytest.fixture(autouse=True)

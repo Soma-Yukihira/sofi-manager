@@ -8,7 +8,7 @@ aucun GUI requis.
 ## Pourquoi un CLI ?
 
 Le repo embarque deux points d'entrée qui partagent le même cœur
-(`bot_core.py`) :
+(`sofi_manager.bot_core`) :
 
 | Point d'entrée | Quand l'utiliser                                       |
 | -------------- | ------------------------------------------------------ |

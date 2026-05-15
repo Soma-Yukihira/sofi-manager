@@ -12,8 +12,7 @@ from unittest.mock import patch
 import pytest
 from cryptography.fernet import Fernet
 
-import cli
-import crypto
+from sofi_manager import cli, crypto
 
 
 @pytest.fixture(autouse=True)

@@ -64,12 +64,13 @@ an asset, or `requirements.txt`.
 ## Runtime paths
 
 The frozen exe must read its bundled icon from one place and write its
-runtime config to another. Two helpers in `paths.py` handle this:
+runtime config to another. Two helpers in `sofi_manager/paths.py`
+handle this:
 
-| Helper          | Resolves to (frozen)              | Resolves to (source)         |
-| --------------- | --------------------------------- | ---------------------------- |
-| `bundle_dir()`  | `sys._MEIPASS` (read-only assets) | repo root (next to `gui.py`) |
-| `user_dir()`    | folder containing the .exe        | repo root                    |
+| Helper          | Resolves to (frozen)              | Resolves to (source)              |
+| --------------- | --------------------------------- | --------------------------------- |
+| `bundle_dir()`  | `sys._MEIPASS` (read-only assets) | repo root (next to `main.py`)     |
+| `user_dir()`    | folder containing the .exe        | repo root                         |
 
 - **Read-only assets** (`assets/app.ico`, customtkinter themes) live
   under `bundle_dir()`. PyInstaller embeds them at build time.
@@ -78,8 +79,8 @@ runtime config to another. Two helpers in `paths.py` handle this:
   files alongside the exe, the same way they would with the source
   install.
 
-`gui.py`, `cli.py`, and `storage.py` all import from `paths.py` so they
-agree on the same root.
+`sofi_manager.gui`, `sofi_manager.cli` and `sofi_manager.storage` all
+import from `sofi_manager.paths` so they agree on the same root.
 
 > [!NOTE]
 > Prior versions stored `grabs.db` under `%APPDATA%/sofi-manager/`

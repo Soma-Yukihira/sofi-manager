@@ -141,21 +141,26 @@ GUI to the server.
 
 ```
 sofi-manager/
-├── main.py              # GUI launcher (pre-import update hook)
-├── cli.py               # Headless / VPS launcher (same core)
-├── gui.py               # CustomTkinter UI + theme system + update banner
-├── bot_core.py          # SelfBot class + SOFI parsing / scoring
-├── updater.py           # Git + ZIP-codeload auto-updater
-├── crypto.py            # Fernet token encryption (OS keyring)
-├── paths.py             # bundle_dir() / user_dir() resolution
-├── storage.py           # SQLite grab history + legacy DB migration
+├── main.py              # GUI launch shim (pre-import update hook)
+├── cli.py               # Headless / VPS launch shim
+├── sofi_manager/        # Runtime package — every module the app actually loads
+│   ├── gui.py           #   CustomTkinter UI + theme system + update banner
+│   ├── cli.py           #   CLI subcommands (list / show / add / rm / run)
+│   ├── bot_core.py      #   SelfBot class + orchestration
+│   ├── parsing.py       #   SOFI message parsers (FR + EN, pure)
+│   ├── scoring.py       #   card scoring + wishlist override (pure)
+│   ├── crypto.py        #   Fernet token encryption (OS keyring)
+│   ├── paths.py         #   bundle_dir() / user_dir() resolution
+│   ├── storage.py       #   SQLite grab history + legacy DB migration
+│   ├── updater.py       #   git + ZIP-codeload auto-updater
+│   └── _migrations.py   #   one-shot cleanup of pre-refactor root .py files
 ├── selfbot-manager.spec # PyInstaller spec (driven by tools/build.py)
 ├── tools/               # build / update / shortcut / systemd installer
 ├── assets/app.ico       # gold ⚜ icon, bundled into the .exe
 ├── requirements.txt     # discord.py-self, customtkinter, curl_cffi
 ├── tests/               # pytest unit tests
 ├── docs/
-│   ├── wiki/            # Wiki source pages (EN + FR)
+│   ├── wiki/            # Wiki source pages (EN + FR, auto-synced to GitHub Wiki)
 │   └── images/          # Banner + screenshots
 └── LICENSE              # MIT
 ```

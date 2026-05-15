@@ -1,7 +1,7 @@
 import unittest
 
-from bot_core import default_config
-from scoring import choose_card, score_card
+from sofi_manager.bot_core import default_config
+from sofi_manager.scoring import choose_card, score_card
 
 
 class ScoreCardTests(unittest.TestCase):

@@ -13,7 +13,7 @@ For the in-app dashboard, see [Stats](Stats).
 Resolved by `paths.user_dir()`, the same root as `bots.json` /
 `settings.json`. That is:
 
-- **Source install** — repo root, next to `gui.py`.
+- **Source install** — repo root, next to `main.py`.
 - **Frozen `.exe`** — the folder containing the executable.
 
 ### Override with `SOFI_DB_PATH`
@@ -156,5 +156,5 @@ it. Back it up like any other SQLite file:
 ## Next
 
 - [Stats](Stats) — the dashboard that reads this DB.
-- [Architecture](Architecture) — how `storage.py` fits in the rest of
-  the project.
+- [Architecture](Architecture) — how `sofi_manager.storage` fits in the
+  rest of the project.

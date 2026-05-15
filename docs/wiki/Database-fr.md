@@ -13,7 +13,7 @@ Pour le dashboard intégré, voir [Stats](Stats-fr).
 Résolu par `paths.user_dir()`, la même racine que `bots.json` /
 `settings.json`. Soit :
 
-- **Install source** — racine du repo, à côté de `gui.py`.
+- **Install source** — racine du repo, à côté de `main.py`.
 - **`.exe` gelé** — le dossier contenant l'exécutable.
 
 ### Override avec `SOFI_DB_PATH`
@@ -160,5 +160,5 @@ touche. Sauvegarde-le comme n'importe quel SQLite :
 ## Suite
 
 - [Stats](Stats-fr) — le dashboard qui lit cette DB.
-- [Architecture](Architecture-fr) — comment `storage.py` s'intègre
-  dans le reste du projet.
+- [Architecture](Architecture-fr) — comment `sofi_manager.storage`
+  s'intègre dans le reste du projet.

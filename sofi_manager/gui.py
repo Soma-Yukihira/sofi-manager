@@ -20,12 +20,11 @@ from typing import Any, ClassVar, Literal
 
 import customtkinter as ctk
 
-import storage
-import updater
-from bot_core import SelfBot, default_config, sanitize_config
-from crypto import decrypt_token, encrypt_token
-from paths import bundle_dir as _bundle_dir
-from paths import user_dir as _user_dir
+from . import storage, updater
+from .bot_core import SelfBot, default_config, sanitize_config
+from .crypto import decrypt_token, encrypt_token
+from .paths import bundle_dir as _bundle_dir
+from .paths import user_dir as _user_dir
 
 WIKI_UPDATING_URL = "https://github.com/Soma-Yukihira/sofi-manager/wiki/Updating-fr"
 

@@ -42,6 +42,9 @@ binaries += collect_dynamic_libs("cffi")
 # Listing it (and curl_cffi submodules) here is the durable fix.
 hiddenimports = ["_cffi_backend"]
 hiddenimports += collect_submodules("curl_cffi")
+# Belt-and-suspenders: every submodule of the sofi_manager package, in
+# case PyInstaller's graph walker misses one (e.g. dynamic imports).
+hiddenimports += collect_submodules("sofi_manager")
 
 block_cipher = None
 
