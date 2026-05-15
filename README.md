@@ -141,21 +141,28 @@ GUI to the server.
 
 ```
 sofi-manager/
-├── main.py              # GUI launcher
+├── main.py              # GUI launcher (pre-import update hook)
 ├── cli.py               # Headless / VPS launcher (same core)
-├── gui.py               # CustomTkinter interface + theme system
-├── bot_core.py          # SelfBot class + parsing/scoring logic
-├── tools/               # update / install-shortcut / install-systemd
-├── requirements.txt     # discord.py-self, customtkinter
-├── tests/               # lightweight core unit tests
+├── gui.py               # CustomTkinter UI + theme system + update banner
+├── bot_core.py          # SelfBot class + SOFI parsing / scoring
+├── updater.py           # Git + ZIP-codeload auto-updater
+├── crypto.py            # Fernet token encryption (OS keyring)
+├── paths.py             # bundle_dir() / user_dir() resolution
+├── storage.py           # SQLite grab history + legacy DB migration
+├── selfbot-manager.spec # PyInstaller spec (driven by tools/build.py)
+├── tools/               # build / update / shortcut / systemd installer
+├── assets/app.ico       # gold ⚜ icon, bundled into the .exe
+├── requirements.txt     # discord.py-self, customtkinter, curl_cffi
+├── tests/               # pytest unit tests
 ├── docs/
 │   ├── wiki/            # Wiki source pages (EN + FR)
 │   └── images/          # Banner + screenshots
 └── LICENSE              # MIT
 ```
 
-The runtime files `bots.json` (tokens) and `settings.json` (theme prefs) are
-created on first use and gitignored.
+Runtime files `bots.json` (encrypted tokens + bot configs),
+`settings.json` (theme prefs + updater state) and `grabs.db` (SQLite
+grab history) are created on first use and gitignored.
 
 ---
 
@@ -169,6 +176,8 @@ The [Wiki](../../wiki) covers each topic in depth:
 | [Building](../../wiki/Building) | One-command standalone Windows .exe |
 | [Configuration](../../wiki/Configuration) | Every field of the GUI explained |
 | [Theming](../../wiki/Theming) | Presets and 17-slot color customization |
+| [Updating](../../wiki/Updating) | In-app updater, ZIP fallback, safety rails |
+| [VPS Deployment](../../wiki/VPS-Deployment) | CLI, `tmux`, `systemd` hardening |
 | [Architecture](../../wiki/Architecture) | How bots, threads and event loops are wired |
 | [Troubleshooting](../../wiki/Troubleshooting) | Common errors + the `📥 SOFI:` debug log |
 | [Discord ToS Notice](../../wiki/Discord-ToS) | Risks and what to expect |

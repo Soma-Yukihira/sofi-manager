@@ -59,19 +59,14 @@ state.
 
 ## Build system
 
-[`tools/build.py`](tools/build.py) is the only public surface — it
-auto-installs PyInstaller if missing, then drives
-[`selfbot-manager.spec`](selfbot-manager.spec).
+[`tools/build.py`](tools/build.py) drives
+[`selfbot-manager.spec`](selfbot-manager.spec) — the spec is the
+single source of truth. `customtkinter` data, `curl_cffi` native libs
+and `_cffi_backend` are bundled there because PyInstaller's module
+graph doesn't pick them up on its own.
 
-- Default mode is **onedir** → `dist/SelfbotManager/SelfbotManager.exe`
-  + supporting files. Faster startup, fewer AV false-positives.
-- `--onefile` produces `dist/SelfbotManager.exe`. Slower startup, more
-  AV noise.
-- `--clean` wipes `build/` and `dist/` first.
-
-The spec bundles `customtkinter` data, `curl_cffi` native libs, and
-`_cffi_backend` as a hidden import — none of those are auto-detected by
-PyInstaller's module graph.
+Modes, output layout and antivirus notes: see
+[Building](docs/wiki/Building.md).
 
 ## Update model
 
@@ -85,27 +80,6 @@ moment it lands.
 - No version-bump dance, no tag-vs-`__version__` drift to police.
 - A fast-forward `git pull` plus a re-exec is atomic enough for a
   desktop side-project.
-
-### Flow
-
-1. **Phase 1 — startup** (`updater.apply_pending_on_startup`, called
-   from `main.py` *before* `from gui import run`):
-   - Checks `.git/` exists, branch is `main`, no local commits ahead,
-     working tree clean.
-   - If `git rev-list --count HEAD..@{u}` > 0, runs
-     `git pull --ff-only origin main` and `os.execv`s the current
-     interpreter so the new code is what gets loaded.
-
-2. **Phase 2 — background** (`updater.check_in_background`, called
-   from `gui.SelfbotManagerApp.__init__`):
-   - Daemon thread runs `git fetch origin main`.
-   - If now behind, calls the callback on the Tk main thread (via
-     `self.after`) which reveals the gold banner at the top of the
-     window: *"Mise à jour disponible — N commit(s) en attente.
-     Redémarrez pour appliquer."*
-
-3. **User clicks Redémarrer** → `_on_update_restart` persists state,
-   stops bots, calls `updater.apply_and_restart` → pull + re-exec.
 
 ### Safety rails
 
@@ -128,25 +102,13 @@ rebuild.
 `bots.json`, `settings.json` and `grabs.db` are gitignored, so they
 always survive.
 
-### CLI alternative
-
-[`tools/update.py`](tools/update.py) does the same `git pull` from a
-terminal, prints a verbose diff summary, and refreshes pip deps if
-`requirements.txt` changed. Useful on a VPS or as a fallback when the
-GUI cannot reach the network.
+User-facing flow (banner copy, restart sequence, codeload details,
+`tools/update.py` CLI alternative): see
+[Updating](docs/wiki/Updating.md).
 
 ## Git hygiene
 
-`.gitignore` blocks:
-
-- Credentials: `bots.json`, `settings.json`, `*.token`, `*.secret`
-- Build artifacts: `dist/`, `build/`, `*.exe`, `*.zip`, `*.manifest`,
-  `*.toc`, `*.pkg`
-- Python cruft: `__pycache__/`, `*.py[cod]`, `*.egg-info/`, caches
-- Virtualenvs: `env/`, `venv/`, `.venv/`, `ENV/`
-- Tooling state: `.claude/`, `.claude/worktrees/`, `.vscode/`,
-  `.idea/`
-- Editor / OS junk: `*.swp`, `*.swo`, `.DS_Store`, `Thumbs.db`,
-  `*.log`, `*.bak`, `*.tmp`
-
-Work only on `main`. Every push is a release.
+`.gitignore` enforces the credentials, build-output, venv and cache
+exclusions. The authoritative list of "never commit" patterns lives in
+[CLAUDE.md](CLAUDE.md). Workflow: feature branch → PR → squash-merge
+into `main`. Every push to `main` is auto-shipped to users.
