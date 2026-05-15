@@ -23,6 +23,8 @@ from storage import (
     export_csv,
     init_db,
     iter_grabs,
+    legacy_db_path,
+    migrate_db,
     record_grab,
 )
 
@@ -230,25 +232,35 @@ class DefaultDbPathTests(unittest.TestCase):
         with patch.dict(os.environ, {"SOFI_DB_PATH": "~/sofi.db"}, clear=False):
             self.assertEqual(default_db_path(), Path("~/sofi.db").expanduser())
 
+    def test_returns_user_dir_grabs_db(self):
+        fake = Path("/fake/project/dir")
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(storage, "user_dir", lambda: fake),
+        ):
+            self.assertEqual(default_db_path(), fake / "grabs.db")
+
+
+class LegacyDbPathTests(unittest.TestCase):
     def test_windows_uses_appdata(self):
         env = {"APPDATA": r"C:\Users\Test\AppData\Roaming"}
         with (
             patch.dict(os.environ, env, clear=True),
             patch.object(storage.sys, "platform", "win32"),
         ):
-            path = default_db_path()
+            path = legacy_db_path()
         self.assertEqual(
             path,
             Path(r"C:\Users\Test\AppData\Roaming") / "sofi-manager" / "grabs.db",
         )
 
-    def test_posix_uses_xdg_or_local_share(self):
+    def test_posix_uses_local_share(self):
         with (
             patch.dict(os.environ, {}, clear=True),
             patch.object(storage.sys, "platform", "linux"),
             patch.object(Path, "home", staticmethod(lambda: Path("/home/test"))),
         ):
-            path = default_db_path()
+            path = legacy_db_path()
         self.assertEqual(path, Path("/home/test/.local/share/sofi-manager/grabs.db"))
 
     def test_posix_respects_xdg_data_home(self):
@@ -257,8 +269,117 @@ class DefaultDbPathTests(unittest.TestCase):
             patch.dict(os.environ, env, clear=True),
             patch.object(storage.sys, "platform", "linux"),
         ):
-            path = default_db_path()
+            path = legacy_db_path()
         self.assertEqual(path, Path("/custom/data/sofi-manager/grabs.db"))
+
+
+class MigrateDbTests(_TmpDB):
+    def setUp(self):
+        super().setUp()
+        self.old = Path(self._tmp.name) / "legacy" / "grabs.db"
+        self.new = Path(self._tmp.name) / "project" / "grabs.db"
+
+    def _seed_old(self, *, with_sidecars: bool = False) -> None:
+        init_db(self.old)
+        record_grab(GrabRecord(bot_label="bot[1]", success=True), path=self.old)
+        # Force the init cache so iter/record on `new` later re-initialises.
+        storage._initialized.clear()
+        if with_sidecars:
+            # Real WAL/SHM may have been truncated by the checkpoint inside
+            # init_db; create empty stand-ins so we can assert they migrate
+            # too even when present.
+            Path(str(self.old) + "-wal").write_bytes(b"")
+            Path(str(self.old) + "-shm").write_bytes(b"")
+
+    def test_no_source_is_noop(self):
+        result = migrate_db(self.old, self.new)
+        self.assertFalse(result.moved)
+        self.assertEqual(result.reason, "no_source")
+        self.assertFalse(self.old.exists())
+        self.assertFalse(self.new.exists())
+
+    def test_target_exists_is_noop(self):
+        self._seed_old()
+        self.new.parent.mkdir(parents=True, exist_ok=True)
+        self.new.write_bytes(b"existing")
+        result = migrate_db(self.old, self.new)
+        self.assertFalse(result.moved)
+        self.assertEqual(result.reason, "target_exists")
+        # Neither side touched.
+        self.assertTrue(self.old.exists())
+        self.assertEqual(self.new.read_bytes(), b"existing")
+
+    def test_migrates_db_only(self):
+        self._seed_old()
+        result = migrate_db(self.old, self.new)
+        self.assertTrue(result.moved)
+        self.assertEqual(result.reason, "migrated")
+        self.assertFalse(self.old.exists())
+        self.assertTrue(self.new.exists())
+        # Row survived the move.
+        rows = list(iter_grabs(self.new))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].bot_label, "bot[1]")
+        # Reported `files` contains the moved DB.
+        self.assertIn(self.new, result.files)
+
+    def test_checkpoint_clears_sidecars_on_happy_path(self):
+        # WAL checkpoint(TRUNCATE) consolidates pending writes into the main
+        # file and removes the sidecars. We assert the legacy directory is
+        # fully empty after migration so the user sees nothing left behind.
+        self._seed_old(with_sidecars=True)
+        result = migrate_db(self.old, self.new)
+        self.assertTrue(result.moved)
+        for suffix in ("", "-wal", "-shm"):
+            self.assertFalse(Path(str(self.old) + suffix).exists())
+        # Main DB landed at the new location.
+        self.assertTrue(self.new.exists())
+        moved_names = {p.name for p in result.files}
+        self.assertEqual(moved_names, {"grabs.db"})
+
+    def test_moves_sidecars_when_checkpoint_fails(self):
+        # If the WAL checkpoint can't run (e.g. the DB is unreadable as
+        # SQLite for some reason), we must still move every sidecar that
+        # happens to be lying around so the legacy dir is clean.
+        self._seed_old(with_sidecars=True)
+        # Patch _connect so the pragma path raises and we fall through to
+        # the unconditional move loop.
+        with patch.object(storage, "_connect", side_effect=sqlite3.Error("boom")):
+            result = migrate_db(self.old, self.new)
+        self.assertTrue(result.moved)
+        for suffix in ("", "-wal", "-shm"):
+            self.assertFalse(Path(str(self.old) + suffix).exists())
+            self.assertTrue(Path(str(self.new) + suffix).exists())
+        moved_names = {p.name for p in result.files}
+        self.assertEqual(moved_names, {"grabs.db", "grabs.db-wal", "grabs.db-shm"})
+
+    def test_idempotent_after_success(self):
+        self._seed_old()
+        first = migrate_db(self.old, self.new)
+        self.assertTrue(first.moved)
+        # Second call: old no longer exists → no_source, no error.
+        second = migrate_db(self.old, self.new)
+        self.assertFalse(second.moved)
+        self.assertEqual(second.reason, "no_source")
+        # New DB is untouched.
+        self.assertEqual(len(list(iter_grabs(self.new))), 1)
+
+    def test_same_path_is_noop(self):
+        # Models the edge case where SOFI_DB_PATH points at the legacy path:
+        # default_db_path() == legacy_db_path() and we must not self-move.
+        self._seed_old()
+        result = migrate_db(self.old, self.old)
+        self.assertFalse(result.moved)
+        self.assertEqual(result.reason, "same_path")
+        self.assertTrue(self.old.exists())
+
+    def test_creates_target_parent_directory(self):
+        self._seed_old()
+        deep = self.new.parent / "deep" / "nest" / "grabs.db"
+        self.assertFalse(deep.parent.exists())
+        result = migrate_db(self.old, deep)
+        self.assertTrue(result.moved)
+        self.assertTrue(deep.exists())
 
 
 class FailureModeTests(_TmpDB):

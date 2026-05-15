@@ -78,6 +78,8 @@ under `dist/` so a clean checkout stays clean.
 | `gui.py`                                 | CustomTkinter UI + theme system + banner |
 | `bot_core.py`                            | `SelfBot` class, SOFI parsing + scoring  |
 | `crypto.py`                              | Fernet token encryption (keyring + file) |
+| `paths.py`                               | `user_dir()` / `bundle_dir()` shared by gui/cli/storage |
+| `storage.py`                             | SQLite grab history + `migrate_db` legacy mover |
 | `updater.py`                             | Git-source auto-updater (Discord-style)  |
 | `tools/build.py` + `selfbot-manager.spec`| PyInstaller build driver + spec          |
 | `tools/update.py`                        | End-user `git pull` CLI updater          |

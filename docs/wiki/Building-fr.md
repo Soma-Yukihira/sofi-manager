@@ -75,11 +75,20 @@ runtime d'un autre. Deux helpers dans `gui.py` font le tri :
 
 - **Assets read-only** (`assets/app.ico`, thèmes customtkinter) vivent
   dans `BUNDLE_DIR`. PyInstaller les embarque à la compilation.
-- **État mutable** (`bots.json`, `settings.json`) vit dans `USER_DIR`.
-  L'utilisateur final peut donc éditer/sauvegarder ces fichiers à côté
-  de l'exe, exactement comme dans l'install source.
+- **État mutable** (`bots.json`, `settings.json`, `grabs.db`) vit dans
+  `USER_DIR`. L'utilisateur final peut donc éditer/sauvegarder ces
+  fichiers à côté de l'exe, exactement comme dans l'install source.
 
-`cli.py` applique la même règle pour `bots.json`.
+`cli.py` applique la même règle. La résolution vit dans `paths.py` —
+GUI, CLI et `storage.py` partagent la même racine.
+
+> [!NOTE]
+> Les versions antérieures stockaient `grabs.db` sous
+> `%APPDATA%/sofi-manager/` (Windows) ou `~/.local/share/sofi-manager/`
+> (POSIX). Au premier lancement après mise à jour, la GUI déplace
+> silencieusement toute DB existante vers `USER_DIR/grabs.db` et
+> affiche un banner gold à dismisser. Utilise `SOFI_DB_PATH` pour
+> garder la DB ailleurs (utile sur VPS).
 
 > [!NOTE]
 > N'écris jamais dans `BUNDLE_DIR` à l'exécution. En mode `--onefile`

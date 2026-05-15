@@ -73,11 +73,19 @@ runtime config to another. Two helpers in `gui.py` handle this:
 
 - **Read-only assets** (`assets/app.ico`, customtkinter themes) live in
   `BUNDLE_DIR`. PyInstaller embeds them at build time.
-- **Mutable state** (`bots.json`, `settings.json`) lives in `USER_DIR`.
-  This means an end user can edit / back up these files alongside the
-  exe, the same way they would with the source install.
+- **Mutable state** (`bots.json`, `settings.json`, `grabs.db`) lives in
+  `USER_DIR`. This means an end user can edit / back up these files
+  alongside the exe, the same way they would with the source install.
 
-`cli.py` applies the same rule for `bots.json`.
+`cli.py` applies the same rule. Path resolution itself lives in
+`paths.py` so GUI, CLI, and `storage.py` agree on the same root.
+
+> [!NOTE]
+> Prior versions stored `grabs.db` under `%APPDATA%/sofi-manager/`
+> (Windows) or `~/.local/share/sofi-manager/` (POSIX). On first launch
+> after upgrading, the GUI silently moves any legacy DB into
+> `USER_DIR/grabs.db` and shows a one-shot gold banner. Set
+> `SOFI_DB_PATH` to keep the DB anywhere else (useful on VPS).
 
 > [!NOTE]
 > Never write to `BUNDLE_DIR` at runtime. In `--onefile` mode it points
