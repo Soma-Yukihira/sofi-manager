@@ -6,6 +6,25 @@ l'instant où il arrive. L'updater intégré fonctionne comme Discord —
 vérif silencieuse en arrière-plan, bandeau doré quand c'est prêt,
 appliqué au redémarrage.
 
+## Quel chemin pour mon install ?
+
+Le chemin pris par l'updater dépend de la façon dont Selfbot Manager
+a été installé. Repère ta ligne en premier ; les sections ci-dessous
+détaillent chaque chemin.
+
+| Ton install                                       | Ce que tu vois                                                                                 | Action                                                                                       |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Clone git, sur `main`, arbre propre               | **Bandeau doré** + bouton *Redémarrer*                                                         | Clic sur *Redémarrer* (ou relance manuelle) — fast-forward au prochain lancement.            |
+| Téléchargement ZIP (pas de `.git/`)               | **Bandeau doré** via codeload — écrase les fichiers suivis en place au redémarrage             | Pareil. `bots.json`, `settings.json`, `grabs.db` sont gitignorés et survivent intacts.       |
+| `.exe` PyInstaller (build gelé)                   | **Bandeau ambre** : *MAJ auto désactivées*                                                     | Recompile depuis un clone frais (`python tools/build.py`) ou bascule sur une install source. |
+| Clone git, sur une branche feature                | Pas de bandeau. La vérification manuelle dans le menu reste silencieuse.                       | `git checkout main` pour réactiver les MAJ. Voir [Dépannage › Mises à jour](Troubleshooting-fr#mises-à-jour). |
+| Clone git avec modifications non commitées        | Pas de bandeau. Vérif manuelle : *Modifications locales en cours : commit ou stash requis*.    | Commit, stash, ou jette. Voir [Dépannage › Mises à jour](Troubleshooting-fr#mises-à-jour).   |
+| Clone git avec commits locaux en avance sur `main` | Pas de bandeau. Vérif manuelle : *Commits locaux en avance sur origin/main : push ou reset requis*. | Push, rebase, ou reset. Voir [Dépannage › Mises à jour](Troubleshooting-fr#mises-à-jour).    |
+
+Les trois premières lignes sont des chemins end-user. Les trois
+suivantes sont des états dev — l'updater reste volontairement
+silencieux pour ne jamais écraser du travail en cours.
+
 ## Auto-update intégré (clones git)
 
 Au démarrage de la GUI, un thread daemon lance `git fetch origin
