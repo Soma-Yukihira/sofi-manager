@@ -20,7 +20,7 @@ from typing import Any, ClassVar, Literal
 
 import customtkinter as ctk
 
-from . import storage, updater
+from . import storage, updater, version
 from .bot_core import SelfBot, default_config, sanitize_config
 from .crypto import decrypt_token, encrypt_token
 from .paths import bundle_dir as _bundle_dir
@@ -334,6 +334,30 @@ class SelfbotManagerApp(ctk.CTk):
         self.selected_id: str | None = None
         self.cfg_widgets: dict[str, Any] = {}
 
+        # Identify the running build. Footer label + CLI both consume this;
+        # we capture it once at startup so the SHA stays stable for the
+        # duration of the session even if the user pulls in another shell.
+        self.version_info = version.get_version(
+            zip_sha=self.settings.get("zip_install_sha"),
+        )
+
+        # Stash post-update banner state for `_show_post_update_banner` to
+        # consume once the layout is built. Compute now so the SHAs are
+        # captured before any other code touches `settings["last_seen_sha"]`.
+        self._post_update_old_sha: str | None = None
+        last_seen = self.settings.get("last_seen_sha")
+        current_sha = self.version_info.sha
+        if version.should_announce_update(last_seen, current_sha):
+            self._post_update_old_sha = last_seen
+        # Bump last_seen the moment we decide whether to announce, so a
+        # crash before banner-dismiss doesn't re-announce the same update.
+        if isinstance(current_sha, str) and current_sha and last_seen != current_sha:
+            self.settings["last_seen_sha"] = current_sha
+            try:
+                save_settings(self.settings)
+            except Exception:
+                pass
+
         # Update banner state. `_update_mode` is "git" for clones (fast-forward
         # pull) or "zip" for ZIP installs (download + overwrite). Dictates which
         # apply path the Restart button takes. `_pending_zip_sha` is the SHA the
@@ -376,6 +400,11 @@ class SelfbotManagerApp(ctk.CTk):
         # USER_DIR at startup. Deferred for the same reason.
         if self._db_migration_result is not None and self._db_migration_result.moved:
             self.after(0, self._show_db_migration_banner)
+
+        # One-shot "what's new" banner if the SHA changed between launches.
+        # `_post_update_old_sha` was populated in __init__ above.
+        if self._post_update_old_sha:
+            self.after(0, self._show_post_update_banner)
 
     # ---------- thème ----------
 
@@ -512,6 +541,8 @@ class SelfbotManagerApp(ctk.CTk):
         side.grid(row=0, column=0, sticky="nsew")
         side.grid_columnconfigure(0, weight=1)
         side.grid_rowconfigure(1, weight=1)
+        # row 0 = header, row 1 = bot list (expanding), row 2 = add-bot
+        # button, row 3 = version label (discrete, clickable -> commit page)
 
         header = ctk.CTkFrame(side, fg_color="transparent", height=80)
         header.grid(row=0, column=0, sticky="ew", padx=18, pady=(20, 14))
@@ -538,7 +569,7 @@ class SelfbotManagerApp(ctk.CTk):
         self.bot_list.grid(row=1, column=0, sticky="nsew", padx=10, pady=4)
 
         footer = ctk.CTkFrame(side, fg_color="transparent", height=70)
-        footer.grid(row=2, column=0, sticky="ew", padx=14, pady=(8, 16))
+        footer.grid(row=2, column=0, sticky="ew", padx=14, pady=(8, 4))
         footer.grid_propagate(False)
         self._mk_button(
             footer,
@@ -547,6 +578,50 @@ class SelfbotManagerApp(ctk.CTk):
             variant="default",
             width=240,
         ).pack(fill="x", pady=4)
+
+        self._build_version_footer(side)
+
+    def _build_version_footer(self, parent: Any) -> None:
+        """Discrete version line at the very bottom of the sidebar.
+
+        Clickable -> opens the commit page on GitHub. Tooltip-on-hover
+        shows the full identification (count + sha + date). Hidden when
+        we couldn't identify the build at all (no git, no _build_info,
+        no zip_install_sha) - showing 'unknown' would be noise.
+        """
+        T = self.theme
+        v = self.version_info
+        if v.source == "unknown":
+            return
+        version_box = ctk.CTkFrame(parent, fg_color="transparent", height=26)
+        version_box.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 10))
+        version_box.grid_propagate(False)
+        self.version_label = ctk.CTkLabel(
+            version_box,
+            text=version.format_short(v),
+            text_color=T["text_dim"],
+            font=ctk.CTkFont(size=11),
+            cursor="hand2",
+        )
+        self.version_label.pack(anchor="w")
+        # Hover lifts the text colour to accent_dim so users notice it's
+        # interactive. Click opens the commit page.
+        self.version_label.bind("<Button-1>", lambda _e: self._open_commit_page())
+        self.version_label.bind(
+            "<Enter>", lambda _e: self.version_label.configure(text_color=T["accent"])
+        )
+        self.version_label.bind(
+            "<Leave>", lambda _e: self.version_label.configure(text_color=T["text_dim"])
+        )
+
+    def _open_commit_page(self) -> None:
+        v = self.version_info
+        if not v.sha or v.source == "unknown":
+            return
+        try:
+            webbrowser.open(version.commit_url(v.sha), new=2)
+        except Exception:
+            pass
 
     # ---------- Update banner ----------
 
@@ -912,6 +987,91 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
+    # ---------- Post-update "what's new" banner ----------
+
+    def _build_post_update_banner(self, parent: Any) -> None:
+        """Gold strip shown once after the SHA changes between launches.
+
+        The label + compare URL are wired in `_show_post_update_banner`
+        because the new SHA isn't known until we've populated
+        `self.version_info`, which happens in `__init__` before the
+        layout is built.
+        """
+        T = self.theme
+        self.post_update_banner = ctk.CTkFrame(
+            parent,
+            fg_color=T["accent"],
+            corner_radius=0,
+            height=38,
+        )
+        self.post_update_banner.grid(row=0, column=0, sticky="ew")
+        self.post_update_banner.grid_propagate(False)
+        self.post_update_banner.grid_columnconfigure(0, weight=1)
+
+        self.post_update_banner_label = ctk.CTkLabel(
+            self.post_update_banner,
+            text="",
+            text_color=T["text_on_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.post_update_banner_label.grid(row=0, column=0, sticky="w", padx=18)
+
+        btns = ctk.CTkFrame(self.post_update_banner, fg_color="transparent")
+        btns.grid(row=0, column=1, sticky="e", padx=10, pady=4)
+        ctk.CTkButton(
+            btns,
+            text="Plus tard",
+            command=self._dismiss_post_update_banner,
+            fg_color="transparent",
+            hover_color=T["accent_bright"],
+            text_color=T["text_on_accent"],
+            border_width=0,
+            width=80,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(side="right", padx=4)
+        ctk.CTkButton(
+            btns,
+            text="Voir les changements",
+            command=self._open_compare_page,
+            fg_color=T["text_on_accent"],
+            hover_color=T["bg"],
+            text_color=T["accent"],
+            border_width=0,
+            width=170,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(side="right", padx=4)
+
+        self.post_update_banner.grid_remove()
+
+    def _show_post_update_banner(self) -> None:
+        if not self._post_update_old_sha:
+            return
+        v = self.version_info
+        msg = f"  Mis a jour vers {version.format_short(v)}"
+        try:
+            self.post_update_banner_label.configure(text=msg)
+            self.post_update_banner.grid()
+        except Exception:
+            pass
+
+    def _dismiss_post_update_banner(self) -> None:
+        try:
+            self.post_update_banner.grid_remove()
+        except Exception:
+            pass
+
+    def _open_compare_page(self) -> None:
+        old = self._post_update_old_sha
+        new = self.version_info.sha
+        if not old or not new:
+            return
+        try:
+            webbrowser.open(version.compare_url(old, new), new=2)
+        except Exception:
+            pass
+
     def _on_update_restart(self) -> None:
         # Persist current form/state before re-execing, just like _on_close.
         if self.selected_id:
@@ -962,6 +1122,8 @@ class SelfbotManagerApp(ctk.CTk):
         self._build_skip_reason_banner(main)
         # --- DB migration banner (one-shot if legacy %APPDATA% DB was moved) ---
         self._build_db_migration_banner(main)
+        # --- Post-update "what's new" banner (one-shot when SHA changed) ---
+        self._build_post_update_banner(main)
 
         # --- Top bar ---
         top = ctk.CTkFrame(main, fg_color=T["panel"], corner_radius=0, height=72)
