@@ -71,6 +71,56 @@ cycle. If it's chronic, increase the retry count in
 
 ---
 
+## Updates
+
+The auto-updater stays silent on three developer-only git states.
+The manual check button in the menu (`↻ MAJ`) is what surfaces them.
+For the end-user paths (gold / amber banners), see [Updating](Updating).
+
+### Manual check stays silent (on a feature branch)
+
+The updater refuses to touch a tree that isn't on `main`. Switch back:
+
+```bash
+git checkout main
+git pull --ff-only
+```
+
+If you were doing work on the feature branch, push it first or stash it
+(see the next two cases).
+
+### `Modifications locales en cours : commit ou stash requis`
+
+`git status --porcelain --untracked-files=no` reports modifications to
+tracked files. A fast-forward could conflict, so the updater bails out.
+Pick one:
+
+```bash
+git status            # see what's modified
+git stash             # park the changes, update, then `git stash pop`
+git restore <file>    # discard a file you don't want to keep
+git commit -am "..."  # commit the work, then update
+```
+
+Untracked files are ignored — only changes to tracked files trip this.
+
+### `Commits locaux en avance sur origin/main : push ou reset requis`
+
+You have commits that aren't on `origin/main`. A fast-forward pull would
+force a merge, so the updater bails out. Push the work:
+
+```bash
+git push origin main
+```
+
+Or, if those commits aren't worth keeping:
+
+```bash
+git reset --hard origin/main   # destructive — loses local commits
+```
+
+---
+
 ## GUI
 
 ### Theme toggle resets everything to grey

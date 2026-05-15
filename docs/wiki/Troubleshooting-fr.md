@@ -72,6 +72,60 @@ pour ce cycle. Si c'est chronique, augmente le nombre de retries dans
 
 ---
 
+## Mises à jour
+
+L'updater auto reste silencieux sur trois états git réservés aux devs.
+Le bouton de vérification manuelle dans le menu (`↻ MAJ`) est ce qui
+les remonte. Pour les chemins end-user (bandeaux doré / ambre), voir
+[Mise à jour](Updating-fr).
+
+### Vérif manuelle silencieuse (sur une branche feature)
+
+L'updater refuse de toucher un arbre qui n'est pas sur `main`. Reviens
+dessus :
+
+```bash
+git checkout main
+git pull --ff-only
+```
+
+Si tu travaillais sur la branche feature, push d'abord ou stash
+(voir les deux cas suivants).
+
+### `Modifications locales en cours : commit ou stash requis`
+
+`git status --porcelain --untracked-files=no` signale des
+modifications sur des fichiers suivis. Un fast-forward pourrait
+conflict, donc l'updater abandonne. Au choix :
+
+```bash
+git status            # voir ce qui est modifié
+git stash             # mettre les changements de côté, MAJ, puis `git stash pop`
+git restore <fichier> # jeter un fichier qu'on ne veut pas garder
+git commit -am "..."  # commit le travail, puis MAJ
+```
+
+Les fichiers non suivis sont ignorés — seules les modifs sur fichiers
+suivis déclenchent ce cas.
+
+### `Commits locaux en avance sur origin/main : push ou reset requis`
+
+Tu as des commits qui ne sont pas sur `origin/main`. Un pull
+fast-forward forcerait un merge, donc l'updater abandonne. Push le
+travail :
+
+```bash
+git push origin main
+```
+
+Ou, si ces commits ne valent pas la peine d'être gardés :
+
+```bash
+git reset --hard origin/main   # destructif — perd les commits locaux
+```
+
+---
+
 ## GUI
 
 ### Le toggle de thème tout casse en gris
