@@ -31,6 +31,9 @@ import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
+
+SkipReason = Literal["frozen", "no-git", "off-main", "dirty", "ahead"]
 
 ROOT = Path(__file__).resolve().parent
 
@@ -52,6 +55,43 @@ def _git(*args: str, capture: bool = True) -> subprocess.CompletedProcess:
 
 def is_git_clone() -> bool:
     return (ROOT / ".git").exists()
+
+
+def _is_frozen() -> bool:
+    """True when running from a PyInstaller bundle (`sys.frozen` is set)."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def skip_reason() -> SkipReason | None:
+    """
+    Reason auto-updates are silently disabled, or None if the updater can
+    fast-forward this install on the next restart.
+
+    Priority order (first match wins):
+        - "frozen"   : PyInstaller .exe build; user must rebuild/reinstall.
+        - "no-git"   : no `.git/` directory (ZIP / source-only download).
+        - "off-main" : on a feature branch; updater protects local work.
+        - "dirty"    : tracked files have uncommitted modifications.
+        - "ahead"    : local commits not yet pushed to origin/main.
+
+    The GUI surfaces "frozen" / "no-git" so .exe and ZIP users learn why
+    their install will never auto-update, instead of silently lagging
+    behind. The dev cases ("off-main" / "dirty" / "ahead") are returned
+    here for completeness (callers like UPD-ZIP can branch on them) but
+    are already surfaced on-demand by `fetch_and_status` — no passive
+    banner, since devs intentionally sit in those states.
+    """
+    if _is_frozen():
+        return "frozen"
+    if not is_git_clone():
+        return "no-git"
+    if current_branch() != "main":
+        return "off-main"
+    if has_local_changes():
+        return "dirty"
+    if ahead_count() > 0:
+        return "ahead"
+    return None
 
 
 def _int(s: str) -> int:

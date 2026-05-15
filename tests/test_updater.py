@@ -419,6 +419,98 @@ class FetchAndStatus(unittest.TestCase):
             self.assertEqual(updater.fetch_and_status(), {"state": "available", "behind": 5})
 
 
+class SkipReason(unittest.TestCase):
+    """Priority order of the five skip reasons surfaced by `skip_reason()`.
+
+    The GUI uses this to passively explain why auto-updates are OFF.
+    Frozen and no-git short-circuit ahead of any git-state probing because
+    those installs can never auto-update at all - regardless of how the
+    user's tree looks today, the updater is structurally disabled."""
+
+    def test_returns_none_on_clean_main(self):
+        with (
+            patch.object(updater, "_is_frozen", return_value=False),
+            patch.object(updater, "is_git_clone", return_value=True),
+            patch.object(updater, "current_branch", return_value="main"),
+            patch.object(updater, "has_local_changes", return_value=False),
+            patch.object(updater, "ahead_count", return_value=0),
+        ):
+            self.assertIsNone(updater.skip_reason())
+
+    def test_frozen_wins_over_everything(self):
+        # A PyInstaller .exe is the dominant reason - even if a .git/ dir
+        # happens to exist next to it, the running binary cannot pull.
+        with (
+            patch.object(updater, "_is_frozen", return_value=True),
+            patch.object(updater, "is_git_clone", return_value=True),
+            patch.object(updater, "current_branch", return_value="main"),
+            patch.object(updater, "has_local_changes", return_value=True),
+            patch.object(updater, "ahead_count", return_value=5),
+        ):
+            self.assertEqual(updater.skip_reason(), "frozen")
+
+    def test_no_git_when_not_frozen_and_no_dot_git(self):
+        with (
+            patch.object(updater, "_is_frozen", return_value=False),
+            patch.object(updater, "is_git_clone", return_value=False),
+        ):
+            self.assertEqual(updater.skip_reason(), "no-git")
+
+    def test_off_main_on_feature_branch(self):
+        with (
+            patch.object(updater, "_is_frozen", return_value=False),
+            patch.object(updater, "is_git_clone", return_value=True),
+            patch.object(updater, "current_branch", return_value="feat/x"),
+            patch.object(updater, "has_local_changes", return_value=False),
+            patch.object(updater, "ahead_count", return_value=0),
+        ):
+            self.assertEqual(updater.skip_reason(), "off-main")
+
+    def test_dirty_when_on_main_with_local_changes(self):
+        with (
+            patch.object(updater, "_is_frozen", return_value=False),
+            patch.object(updater, "is_git_clone", return_value=True),
+            patch.object(updater, "current_branch", return_value="main"),
+            patch.object(updater, "has_local_changes", return_value=True),
+            patch.object(updater, "ahead_count", return_value=0),
+        ):
+            self.assertEqual(updater.skip_reason(), "dirty")
+
+    def test_ahead_when_on_main_clean_with_unpushed_commits(self):
+        with (
+            patch.object(updater, "_is_frozen", return_value=False),
+            patch.object(updater, "is_git_clone", return_value=True),
+            patch.object(updater, "current_branch", return_value="main"),
+            patch.object(updater, "has_local_changes", return_value=False),
+            patch.object(updater, "ahead_count", return_value=2),
+        ):
+            self.assertEqual(updater.skip_reason(), "ahead")
+
+    def test_dirty_takes_precedence_over_ahead(self):
+        # Both could be true at once; "dirty" is the more actionable reason
+        # since unpushed commits alone don't block the user from working.
+        with (
+            patch.object(updater, "_is_frozen", return_value=False),
+            patch.object(updater, "is_git_clone", return_value=True),
+            patch.object(updater, "current_branch", return_value="main"),
+            patch.object(updater, "has_local_changes", return_value=True),
+            patch.object(updater, "ahead_count", return_value=3),
+        ):
+            self.assertEqual(updater.skip_reason(), "dirty")
+
+
+class IsFrozen(unittest.TestCase):
+    def test_returns_false_when_sys_frozen_absent(self):
+        # `sys.frozen` is only set by PyInstaller; in dev it must be falsy
+        # so the updater runs normally.
+        with patch.object(updater.sys, "frozen", False, create=True):
+            self.assertFalse(updater._is_frozen())
+
+    def test_returns_true_when_sys_frozen_set(self):
+        with patch.object(updater.sys, "frozen", True, create=True):
+            self.assertTrue(updater._is_frozen())
+
+
 class ApplyAndRestart(unittest.TestCase):
     def test_refuses_when_not_safe(self):
         with (
