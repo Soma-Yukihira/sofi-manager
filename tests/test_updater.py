@@ -688,7 +688,10 @@ class ApplyZipBytes(unittest.TestCase):
 
 class FetchRemoteMainSha(unittest.TestCase):
     def test_returns_sha_from_api_json(self):
-        with patch.object(updater, "_http_get_json", return_value={"sha": "a" * 40, "commit": {}}):
+        with (
+            patch.object(updater, "_http_get_json", return_value={"sha": "a" * 40, "commit": {}}),
+            patch.object(updater, "fetch_remote_main_count", return_value=42),
+        ):
             self.assertEqual(updater.fetch_remote_main_sha(), "a" * 40)
 
     def test_returns_none_on_network_error(self):
@@ -716,46 +719,155 @@ class FetchRemoteMainSha(unittest.TestCase):
             self.assertIsNone(updater.fetch_remote_main_sha())
 
 
+class ParseLastPage(unittest.TestCase):
+    """Pure parser for the `rel="last"` segment of a GitHub Link header."""
+
+    def test_extracts_page_number_from_rel_last(self):
+        link = (
+            '<https://api.github.com/x?per_page=1&page=2>; rel="next", '
+            '<https://api.github.com/x?per_page=1&page=58>; rel="last"'
+        )
+        self.assertEqual(updater._parse_last_page(link), 58)
+
+    def test_returns_none_when_link_header_absent(self):
+        self.assertIsNone(updater._parse_last_page(None))
+        self.assertIsNone(updater._parse_last_page(""))
+
+    def test_returns_none_when_rel_last_absent(self):
+        link = '<https://api.github.com/x?per_page=1&page=2>; rel="next"'
+        self.assertIsNone(updater._parse_last_page(link))
+
+    def test_returns_none_on_malformed_segment(self):
+        # No <...> wrapper.
+        self.assertIsNone(updater._parse_last_page('rel="last"'))
+
+    def test_returns_none_when_page_value_is_not_int(self):
+        link = '<https://api.github.com/x?page=abc>; rel="last"'
+        self.assertIsNone(updater._parse_last_page(link))
+
+    def test_handles_extra_query_params_around_page(self):
+        link = (
+            '<https://api.github.com/x?sha=main&per_page=1&page=143&since=2024-01-01>; rel="last"'
+        )
+        self.assertEqual(updater._parse_last_page(link), 143)
+
+
+class FetchRemoteMainCount(unittest.TestCase):
+    def test_returns_page_count_when_link_header_present(self):
+        link = '<https://api.github.com/x?page=58>; rel="last"'
+        with patch.object(updater, "_http_get_link_header", return_value=link):
+            self.assertEqual(updater.fetch_remote_main_count(), 58)
+
+    def test_falls_back_to_body_when_link_absent_and_body_has_one_item(self):
+        # Single-commit repo: GitHub omits the Link header. The /commits
+        # endpoint still returns a one-element array, so count = 1.
+        with (
+            patch.object(updater, "_http_get_link_header", return_value=None),
+            patch.object(updater, "_http_get_json", return_value=[{"sha": "x"}]),
+        ):
+            self.assertEqual(updater.fetch_remote_main_count(), 1)
+
+    def test_returns_none_when_link_absent_and_body_empty(self):
+        with (
+            patch.object(updater, "_http_get_link_header", return_value=None),
+            patch.object(updater, "_http_get_json", return_value=[]),
+        ):
+            self.assertIsNone(updater.fetch_remote_main_count())
+
+    def test_returns_none_on_network_failure(self):
+        import urllib.error
+
+        with (
+            patch.object(updater, "_http_get_link_header", return_value=None),
+            patch.object(updater, "_http_get_json", side_effect=urllib.error.URLError("dns")),
+        ):
+            self.assertIsNone(updater.fetch_remote_main_count())
+
+
+class FetchRemoteMainInfo(unittest.TestCase):
+    """`fetch_remote_main_info` assembles {sha, count, date} for the
+    sidebar footer + persistence layer."""
+
+    def _payload(self, sha: str = "a" * 40, date: str = "2026-05-15T12:00:00Z") -> dict:
+        return {"sha": sha, "commit": {"committer": {"date": date}}}
+
+    def test_returns_dict_with_sha_count_date(self):
+        with (
+            patch.object(updater, "_http_get_json", return_value=self._payload()),
+            patch.object(updater, "fetch_remote_main_count", return_value=58),
+        ):
+            info = updater.fetch_remote_main_info()
+        self.assertEqual(info, {"sha": "a" * 40, "count": 58, "date": "2026-05-15"})
+
+    def test_returns_dict_with_none_count_on_count_fetch_failure(self):
+        with (
+            patch.object(updater, "_http_get_json", return_value=self._payload()),
+            patch.object(updater, "fetch_remote_main_count", return_value=None),
+        ):
+            info = updater.fetch_remote_main_info()
+        assert info is not None
+        self.assertIsNone(info["count"])
+        self.assertEqual(info["sha"], "a" * 40)
+
+    def test_returns_none_when_sha_is_invalid(self):
+        with patch.object(updater, "_http_get_json", return_value={"sha": "abc"}):
+            self.assertIsNone(updater.fetch_remote_main_info())
+
+    def test_handles_missing_committer_date(self):
+        with (
+            patch.object(updater, "_http_get_json", return_value={"sha": "a" * 40, "commit": {}}),
+            patch.object(updater, "fetch_remote_main_count", return_value=58),
+        ):
+            info = updater.fetch_remote_main_info()
+        assert info is not None
+        self.assertEqual(info["date"], "")
+
+
+def _info(sha: str, count: int | None = 1, date: str = "2026-01-01") -> dict:
+    return {"sha": sha, "count": count, "date": date}
+
+
 class ApplyZipUpdate(unittest.TestCase):
     def test_refuses_when_not_no_git_install(self):
         with patch.object(updater, "skip_reason", return_value=None):
-            ok, msg, sha = updater.apply_zip_update()
+            ok, msg, info = updater.apply_zip_update()
         self.assertFalse(ok)
-        self.assertIsNone(sha)
+        self.assertIsNone(info)
         self.assertIn("non-git", msg.lower())
 
-    def test_returns_failure_when_sha_fetch_fails(self):
+    def test_returns_failure_when_info_fetch_fails(self):
         with (
             patch.object(updater, "skip_reason", return_value="no-git"),
-            patch.object(updater, "fetch_remote_main_sha", return_value=None),
+            patch.object(updater, "fetch_remote_main_info", return_value=None),
         ):
-            ok, _msg, sha = updater.apply_zip_update()
+            ok, _msg, info = updater.apply_zip_update()
         self.assertFalse(ok)
-        self.assertIsNone(sha)
+        self.assertIsNone(info)
 
     def test_returns_failure_when_download_fails(self):
         import urllib.error
 
         with (
             patch.object(updater, "skip_reason", return_value="no-git"),
-            patch.object(updater, "fetch_remote_main_sha", return_value="a" * 40),
+            patch.object(updater, "fetch_remote_main_info", return_value=_info("a" * 40, 58)),
             patch.object(updater, "_http_get_bytes", side_effect=urllib.error.URLError("net")),
         ):
-            ok, _msg, sha = updater.apply_zip_update()
+            ok, _msg, info = updater.apply_zip_update()
         self.assertFalse(ok)
-        self.assertIsNone(sha)
+        self.assertIsNone(info)
 
-    def test_happy_path_returns_new_sha(self):
+    def test_happy_path_returns_full_info_dict(self):
+        expected = _info("b" * 40, 58, "2026-05-15")
         with (
             patch.object(updater, "skip_reason", return_value="no-git"),
-            patch.object(updater, "fetch_remote_main_sha", return_value="b" * 40),
+            patch.object(updater, "fetch_remote_main_info", return_value=expected),
             patch.object(updater, "_http_get_bytes", return_value=_make_codeload_zip()),
             patch.object(updater, "_apply_zip_bytes", return_value=(True, "OK")),
         ):
-            ok, msg, sha = updater.apply_zip_update()
+            ok, msg, info = updater.apply_zip_update()
         self.assertTrue(ok)
         self.assertEqual(msg, "OK")
-        self.assertEqual(sha, "b" * 40)
+        self.assertEqual(info, expected)
 
 
 class CheckZipInBackground(unittest.TestCase):
@@ -775,52 +887,70 @@ class CheckZipInBackground(unittest.TestCase):
             patch.object(updater, "skip_reason", return_value=None),
             patch.object(threading, "Thread") as mock_thread,
         ):
-            updater.check_zip_in_background(None, lambda _s: None, lambda _s: None)
+            updater.check_zip_in_background(None, None, lambda _i: None, lambda _i: None)
         mock_thread.assert_not_called()
 
     def test_calls_on_baseline_when_no_installed_sha(self):
         # First launch on a fresh ZIP install: no recorded SHA -> adopt
         # whatever upstream reports as the baseline, silently.
-        seen: list[str] = []
+        seen: list[dict] = []
+        info = _info("c" * 40, 12)
         with (
             patch.object(updater, "skip_reason", return_value="no-git"),
-            patch.object(updater, "fetch_remote_main_sha", return_value="c" * 40),
+            patch.object(updater, "fetch_remote_main_info", return_value=info),
             self._inline_thread(),
         ):
-            updater.check_zip_in_background(None, seen.append, lambda _s: None)
-        self.assertEqual(seen, ["c" * 40])
+            updater.check_zip_in_background(None, None, seen.append, lambda _i: None)
+        self.assertEqual(seen, [info])
 
     def test_calls_on_update_when_sha_differs(self):
-        seen: list[str] = []
+        seen: list[dict] = []
+        info = _info("d" * 40, 13)
         with (
             patch.object(updater, "skip_reason", return_value="no-git"),
-            patch.object(updater, "fetch_remote_main_sha", return_value="d" * 40),
+            patch.object(updater, "fetch_remote_main_info", return_value=info),
             self._inline_thread(),
         ):
-            updater.check_zip_in_background("e" * 40, lambda _s: None, seen.append)
-        self.assertEqual(seen, ["d" * 40])
+            updater.check_zip_in_background("e" * 40, 12, lambda _i: None, seen.append)
+        self.assertEqual(seen, [info])
 
-    def test_silent_when_sha_matches(self):
-        baseline: list[str] = []
-        available: list[str] = []
+    def test_calls_on_baseline_to_backfill_count_when_sha_matches(self):
+        # User installed before the version-identifier landed: same SHA,
+        # but no stored count. We want the count + date filled in.
+        baseline: list[dict] = []
+        available: list[dict] = []
+        info = _info("f" * 40, 58, "2026-05-15")
         with (
             patch.object(updater, "skip_reason", return_value="no-git"),
-            patch.object(updater, "fetch_remote_main_sha", return_value="f" * 40),
+            patch.object(updater, "fetch_remote_main_info", return_value=info),
             self._inline_thread(),
         ):
-            updater.check_zip_in_background("f" * 40, baseline.append, available.append)
+            updater.check_zip_in_background("f" * 40, None, baseline.append, available.append)
+        self.assertEqual(baseline, [info])
+        self.assertEqual(available, [])
+
+    def test_silent_when_sha_matches_and_count_already_known(self):
+        baseline: list[dict] = []
+        available: list[dict] = []
+        info = _info("f" * 40, 58)
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_info", return_value=info),
+            self._inline_thread(),
+        ):
+            updater.check_zip_in_background("f" * 40, 58, baseline.append, available.append)
         self.assertEqual(baseline, [])
         self.assertEqual(available, [])
 
-    def test_silent_when_sha_fetch_fails(self):
-        baseline: list[str] = []
-        available: list[str] = []
+    def test_silent_when_info_fetch_fails(self):
+        baseline: list[dict] = []
+        available: list[dict] = []
         with (
             patch.object(updater, "skip_reason", return_value="no-git"),
-            patch.object(updater, "fetch_remote_main_sha", return_value=None),
+            patch.object(updater, "fetch_remote_main_info", return_value=None),
             self._inline_thread(),
         ):
-            updater.check_zip_in_background(None, baseline.append, available.append)
+            updater.check_zip_in_background(None, None, baseline.append, available.append)
         self.assertEqual(baseline, [])
         self.assertEqual(available, [])
 

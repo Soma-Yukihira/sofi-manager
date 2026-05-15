@@ -114,18 +114,37 @@ def _from_frozen() -> VersionInfo | None:
     return VersionInfo(count=count, sha=sha, date=date, source="frozen")
 
 
-def _from_zip_sha(zip_sha: str | None) -> VersionInfo | None:
+def _from_zip(
+    zip_sha: str | None,
+    zip_count: int | None = None,
+    zip_date: str | None = None,
+) -> VersionInfo | None:
+    """Build a VersionInfo from data persisted in settings.json.
+
+    `zip_count` and `zip_date` are optional: the codeload-mode updater
+    backfills them via the GitHub API but cannot guarantee they are
+    present (offline launches, API rate-limits). Callers that don't have
+    them simply pass None and the formatter omits the missing parts.
+    """
     if not isinstance(zip_sha, str) or not zip_sha:
         return None
-    return VersionInfo(count=None, sha=zip_sha[:7], date="", source="zip")
+    count = zip_count if isinstance(zip_count, int) else None
+    date = zip_date if isinstance(zip_date, str) else ""
+    return VersionInfo(count=count, sha=zip_sha[:7], date=date, source="zip")
 
 
-def get_version(zip_sha: str | None = None) -> VersionInfo:
+def get_version(
+    zip_sha: str | None = None,
+    zip_count: int | None = None,
+    zip_date: str | None = None,
+) -> VersionInfo:
     """Best-effort identification of the running build.
 
-    Resolution order: frozen build -> git clone -> ZIP-install SHA from
-    settings.json -> unknown placeholder. Callers running from the GUI
-    pass `settings.get("zip_install_sha")` for the ZIP fallback.
+    Resolution order: frozen build -> git clone -> ZIP-install triple
+    from settings.json -> unknown placeholder. Callers running from the
+    GUI pass `settings.get("zip_install_sha" / "zip_install_count" /
+    "zip_install_date")` for the ZIP fallback so the count + date land
+    in the footer label even without `.git/`.
     """
     if _is_frozen():
         v = _from_frozen()
@@ -135,7 +154,7 @@ def get_version(zip_sha: str | None = None) -> VersionInfo:
         v = _from_git()
         if v is not None:
             return v
-    v = _from_zip_sha(zip_sha)
+    v = _from_zip(zip_sha, zip_count, zip_date)
     if v is not None:
         return v
     return VersionInfo(count=None, sha="unknown", date="", source="unknown")

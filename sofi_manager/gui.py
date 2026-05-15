@@ -337,8 +337,12 @@ class SelfbotManagerApp(ctk.CTk):
         # Identify the running build. Footer label + CLI both consume this;
         # we capture it once at startup so the SHA stays stable for the
         # duration of the session even if the user pulls in another shell.
+        # ZIP-install fields (count/date) may be missing on first launch -
+        # the background check below backfills them via the GitHub API.
         self.version_info = version.get_version(
             zip_sha=self.settings.get("zip_install_sha"),
+            zip_count=self.settings.get("zip_install_count"),
+            zip_date=self.settings.get("zip_install_date"),
         )
 
         # Stash post-update banner state for `_show_post_update_banner` to
@@ -387,8 +391,9 @@ class SelfbotManagerApp(ctk.CTk):
         # `check_zip_in_background` no-ops on git / frozen installs.
         updater.check_zip_in_background(
             installed_sha=self.settings.get("zip_install_sha"),
-            on_baseline=lambda sha: self.after(0, self._on_zip_baseline_established, sha),
-            on_update_available=lambda sha: self.after(0, self._on_zip_update_available, sha),
+            installed_count=self.settings.get("zip_install_count"),
+            on_baseline=lambda info: self.after(0, self._on_zip_baseline_established, info),
+            on_update_available=lambda info: self.after(0, self._on_zip_update_available, info),
         )
 
         # Frozen .exe installs still need a passive amber banner: we can't
@@ -582,44 +587,42 @@ class SelfbotManagerApp(ctk.CTk):
         self._build_version_footer(side)
 
     def _build_version_footer(self, parent: Any) -> None:
-        """Discrete version line at the very bottom of the sidebar.
+        """Discrete static version line at the very bottom of the sidebar.
 
-        Clickable -> opens the commit page on GitHub. Tooltip-on-hover
-        shows the full identification (count + sha + date). Hidden when
-        we couldn't identify the build at all (no git, no _build_info,
-        no zip_install_sha) - showing 'unknown' would be noise.
+        The frame + label are always created so `_refresh_version_label`
+        can rewrite the text in place once a background ZIP-mode check
+        backfills count + date from the GitHub API. The frame is
+        `grid_remove`d when the source is unknown - showing 'unknown'
+        would be noise.
         """
         T = self.theme
-        v = self.version_info
-        if v.source == "unknown":
-            return
-        version_box = ctk.CTkFrame(parent, fg_color="transparent", height=26)
-        version_box.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 10))
-        version_box.grid_propagate(False)
+        self.version_box = ctk.CTkFrame(parent, fg_color="transparent", height=26)
+        self.version_box.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 10))
+        self.version_box.grid_propagate(False)
         self.version_label = ctk.CTkLabel(
-            version_box,
-            text=version.format_short(v),
+            self.version_box,
+            text="",
             text_color=T["text_dim"],
             font=ctk.CTkFont(size=11),
-            cursor="hand2",
         )
         self.version_label.pack(anchor="w")
-        # Hover lifts the text colour to accent_dim so users notice it's
-        # interactive. Click opens the commit page.
-        self.version_label.bind("<Button-1>", lambda _e: self._open_commit_page())
-        self.version_label.bind(
-            "<Enter>", lambda _e: self.version_label.configure(text_color=T["accent"])
-        )
-        self.version_label.bind(
-            "<Leave>", lambda _e: self.version_label.configure(text_color=T["text_dim"])
-        )
+        self._refresh_version_label()
 
-    def _open_commit_page(self) -> None:
+    def _refresh_version_label(self) -> None:
         v = self.version_info
-        if not v.sha or v.source == "unknown":
+        box = getattr(self, "version_box", None)
+        label = getattr(self, "version_label", None)
+        if box is None or label is None:
+            return
+        if v.source == "unknown":
+            try:
+                box.grid_remove()
+            except Exception:
+                pass
             return
         try:
-            webbrowser.open(version.commit_url(v.sha), new=2)
+            label.configure(text=version.format_short(v))
+            box.grid()
         except Exception:
             pass
 
@@ -713,21 +716,52 @@ class SelfbotManagerApp(ctk.CTk):
         except Exception:
             pass
 
-    def _on_zip_baseline_established(self, sha: str) -> None:
-        """First launch on a fresh ZIP install: record the current upstream
-        SHA as the baseline. Subsequent launches will compare against it.
-        Silent - no banner, since we just adopted whatever the user already
-        has as "in sync"."""
-        if self.settings.get("zip_install_sha") == sha:
-            return
-        self.settings["zip_install_sha"] = sha
-        try:
-            save_settings(self.settings)
-        except Exception:
-            pass
+    def _persist_zip_info(self, info: dict[str, Any]) -> bool:
+        """Write the {sha, count, date} triple to settings.json.
 
-    def _on_zip_update_available(self, sha: str) -> None:
-        self._show_zip_update_banner(sha)
+        Returns True if anything actually changed - the caller uses that
+        to skip a redundant save + label refresh on no-op backfills.
+        """
+        sha = info.get("sha")
+        if not isinstance(sha, str) or not sha:
+            return False
+        count = info.get("count") if isinstance(info.get("count"), int) else None
+        date = info.get("date") if isinstance(info.get("date"), str) else ""
+        changed = False
+        if self.settings.get("zip_install_sha") != sha:
+            self.settings["zip_install_sha"] = sha
+            changed = True
+        if count is not None and self.settings.get("zip_install_count") != count:
+            self.settings["zip_install_count"] = count
+            changed = True
+        if date and self.settings.get("zip_install_date") != date:
+            self.settings["zip_install_date"] = date
+            changed = True
+        if changed:
+            try:
+                save_settings(self.settings)
+            except Exception:
+                pass
+            # Re-derive so the sidebar footer picks up the new fields.
+            self.version_info = version.get_version(
+                zip_sha=self.settings.get("zip_install_sha"),
+                zip_count=self.settings.get("zip_install_count"),
+                zip_date=self.settings.get("zip_install_date"),
+            )
+            self._refresh_version_label()
+        return changed
+
+    def _on_zip_baseline_established(self, info: dict[str, Any]) -> None:
+        """Fresh ZIP install OR existing install with no stored count yet:
+        record the upstream triple. Silent - no banner, since we just
+        adopted whatever the user already has as "in sync" (or backfilled
+        the count alongside an existing SHA)."""
+        self._persist_zip_info(info)
+
+    def _on_zip_update_available(self, info: dict[str, Any]) -> None:
+        sha = info.get("sha")
+        if isinstance(sha, str):
+            self._show_zip_update_banner(sha)
 
     def _check_updates_now(self) -> None:
         """Manual update check - mirrors the background poller's logic for
@@ -746,13 +780,13 @@ class SelfbotManagerApp(ctk.CTk):
         def _worker() -> None:
             try:
                 if zip_mode:
-                    remote = updater.fetch_remote_main_sha()
-                    if remote is None:
+                    info = updater.fetch_remote_main_info()
+                    if info is None:
                         result: dict[str, Any] = {"state": "fetch_failed", "behind": 0}
-                    elif installed_sha is None or installed_sha == remote:
-                        result = {"state": "uptodate", "behind": 0, "sha": remote}
+                    elif installed_sha is None or installed_sha == info["sha"]:
+                        result = {"state": "uptodate", "behind": 0, "info": info}
                     else:
-                        result = {"state": "available_zip", "behind": 0, "sha": remote}
+                        result = {"state": "available_zip", "behind": 0, "info": info}
                 else:
                     result = updater.fetch_and_status()
             except Exception as e:
@@ -775,21 +809,22 @@ class SelfbotManagerApp(ctk.CTk):
             self._show_update_banner(n)
             return
         if state == "available_zip":
-            sha = result.get("sha")
-            if isinstance(sha, str):
+            info = result.get("info")
+            if isinstance(info, dict) and isinstance(info.get("sha"), str):
                 # On ZIP installs with no recorded baseline, this can fire on
                 # the very first manual check; treat it the same as if the
                 # background path had detected drift.
                 if self.settings.get("zip_install_sha") is None:
-                    self.settings["zip_install_sha"] = sha
-                    try:
-                        save_settings(self.settings)
-                    except Exception:
-                        pass
+                    self._persist_zip_info(info)
                     messagebox.showinfo("Mise a jour", "Vous etes a jour.")
                     return
-                self._show_zip_update_banner(sha)
+                self._show_zip_update_banner(info["sha"])
                 return
+        if state == "uptodate" and isinstance(result.get("info"), dict):
+            # Manual ZIP-mode check confirming no drift: opportunistically
+            # backfill count + date for users whose baseline pre-dates
+            # the version-identifier landing.
+            self._persist_zip_info(result["info"])
 
         messages = {
             "uptodate": ("Mise a jour", "Vous etes a jour."),
@@ -1090,17 +1125,14 @@ class SelfbotManagerApp(ctk.CTk):
         def _do_zip_restart() -> None:
             # Network + extract can take seconds; run off the Tk thread.
             def _worker() -> None:
-                ok, msg, new_sha = updater.apply_zip_update()
-                if not ok or new_sha is None:
+                ok, msg, new_info = updater.apply_zip_update()
+                if not ok or new_info is None:
                     self.after(0, lambda: messagebox.showerror("Mise a jour", msg))
                     return
-                # Record the new baseline BEFORE re-exec so the next launch
-                # doesn't immediately re-prompt for the same update.
-                self.settings["zip_install_sha"] = new_sha
-                try:
-                    save_settings(self.settings)
-                except Exception:
-                    pass
+                # Record the new triple BEFORE re-exec so the next launch
+                # doesn't immediately re-prompt for the same update and
+                # the footer label shows `vN · sha` straight away.
+                self._persist_zip_info(new_info)
                 updater._restart()
 
             threading.Thread(target=_worker, name="updater-zip-apply", daemon=True).start()
