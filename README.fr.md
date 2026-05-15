@@ -142,21 +142,29 @@ depuis le GUI vers le serveur.
 
 ```
 sofi-manager/
-├── main.py              # Point d'entrée GUI
-├── cli.py               # Point d'entrée headless / VPS (même cœur)
-├── gui.py               # Interface CustomTkinter + système de thèmes
-├── bot_core.py          # Classe SelfBot + parsing/scoring
-├── tools/               # update / install-shortcut / install-systemd
-├── requirements.txt     # discord.py-self, customtkinter
-├── tests/               # tests unitaires légers du core
+├── main.py              # Lanceur GUI (hook de mise à jour pré-import)
+├── cli.py               # Lanceur headless / VPS (même cœur)
+├── gui.py               # UI CustomTkinter + thèmes + bandeau update
+├── bot_core.py          # Classe SelfBot + parsing / scoring SOFI
+├── updater.py           # Auto-updater git + ZIP-codeload
+├── crypto.py            # Chiffrement Fernet des tokens (keyring OS)
+├── paths.py             # Résolution bundle_dir() / user_dir()
+├── storage.py           # Historique SQLite + migration legacy DB
+├── selfbot-manager.spec # Spec PyInstaller (piloté par tools/build.py)
+├── tools/               # build / update / shortcut / installeur systemd
+├── assets/app.ico       # Icône ⚜ dorée, embarquée dans le .exe
+├── requirements.txt     # discord.py-self, customtkinter, curl_cffi
+├── tests/               # tests unitaires pytest
 ├── docs/
 │   ├── wiki/            # Sources des pages wiki (EN + FR)
 │   └── images/          # Bannière + captures
 └── LICENSE              # MIT
 ```
 
-`bots.json` (tokens) et `settings.json` (préférences thème) sont créés au
-premier lancement et gitignorés.
+Les fichiers runtime `bots.json` (tokens chiffrés + configs bot),
+`settings.json` (préférences thème + état updater) et `grabs.db`
+(historique SQLite des grabs) sont créés au premier lancement et
+gitignorés.
 
 ---
 
@@ -170,6 +178,8 @@ Le [Wiki](../../wiki) couvre chaque sujet en détail :
 | [Compilation](../../wiki/Building-fr) | .exe Windows autonome en une commande |
 | [Configuration](../../wiki/Configuration-fr) | Chaque champ du GUI expliqué |
 | [Thèmes](../../wiki/Theming-fr) | Presets et personnalisation 17 couleurs |
+| [Mise à jour](../../wiki/Updating-fr) | Updater intégré, fallback ZIP, garde-fous |
+| [Déploiement VPS](../../wiki/VPS-Deployment-fr) | CLI, `tmux`, hardening `systemd` |
 | [Architecture](../../wiki/Architecture-fr) | Comment bots, threads et event loops sont câblés |
 | [Dépannage](../../wiki/Troubleshooting-fr) | Erreurs courantes + log debug `📥 SOFI:` |
 | [Avis ToS Discord](../../wiki/Discord-ToS-fr) | Risques et conséquences possibles |
