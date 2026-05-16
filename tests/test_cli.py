@@ -8,11 +8,15 @@ and feeds `input()` via monkeypatch.
 
 from __future__ import annotations
 
+import io
 import json
 import queue
+import runpy
 import signal
+import sys
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest.mock import MagicMock
 
 import pytest
 from cryptography.fernet import Fernet
@@ -596,3 +600,262 @@ class TestSignalWiring:
 
 # Module-level guard: signal constants we reference exist on this platform.
 assert hasattr(signal, "SIGINT")
+
+
+# =====================================================================
+# Color terminal plumbing
+# =====================================================================
+
+
+class TestEnableWindowsVt:
+    """`_enable_windows_vt` flips ANSI processing on legacy cmd.exe so the
+    gold + dim-gray sequences render instead of leaking as escape codes."""
+
+    def test_noop_on_posix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # On POSIX the function is an early return — calling it must never
+        # touch ctypes (which has no `windll` attribute there).
+        monkeypatch.setattr(cli.os, "name", "posix")
+        cli._enable_windows_vt()  # must not raise
+
+    def test_invokes_kernel32_set_console_mode_on_windows(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(cli.os, "name", "nt")
+        calls: dict[str, Any] = {}
+
+        class _FakeKernel32:
+            def GetStdHandle(self, handle_id: int) -> int:
+                calls["handle"] = handle_id
+                return 42
+
+            def SetConsoleMode(self, h: int, mode: int) -> int:
+                calls["set"] = (h, mode)
+                return 1
+
+        fake_ctypes = MagicMock()
+        fake_ctypes.windll.kernel32 = _FakeKernel32()
+        # Inject as a fresh ctypes module so the `import ctypes` inside
+        # _enable_windows_vt picks up our fake.
+        monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
+        cli._enable_windows_vt()
+
+        assert calls["handle"] == -11  # STD_OUTPUT_HANDLE
+        assert calls["set"] == (42, 7)
+
+    def test_swallows_ctypes_import_failure_silently(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(cli.os, "name", "nt")
+        # `import ctypes` returning None forces an AttributeError inside the
+        # try/except — the function must not propagate it.
+        monkeypatch.setitem(sys.modules, "ctypes", None)
+        cli._enable_windows_vt()  # must not raise
+
+
+# =====================================================================
+# _ask: input prompt helper
+# =====================================================================
+
+
+class TestAsk:
+    def test_returns_input_when_non_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _prompt: "alice")
+        assert cli._ask("Name") == "alice"
+
+    def test_returns_default_when_input_blank(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _prompt: "   ")
+        assert cli._ask("Name", default="bob") == "bob"
+
+    def test_allow_empty_returns_empty_string(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _prompt: "")
+        assert cli._ask("Optional", allow_empty=True) == ""
+
+    def test_loops_until_value_provided(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # No default, allow_empty=False: blank inputs must reprompt with the
+        # "value required" warning until the user types something.
+        feed = iter(["", "  ", "finally"])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(feed))
+        result = cli._ask("Name")
+        assert result == "finally"
+        # The warning line is printed once per blank, so at least twice here.
+        out = capsys.readouterr().out
+        assert out.count("value required") >= 2
+
+
+# =====================================================================
+# cmd_run: signal handler + post-stop drain
+# =====================================================================
+
+
+class TestRunSignalHandler:
+    def test_signal_handler_breaks_polling_loop(
+        self,
+        cfg_path: Path,
+        fake_selfbot: type[_FakeSelfBot],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Capture the SIGINT handler that cmd_run installs, then invoke it
+        # from inside the polling sleep so the `while not stop_requested`
+        # branch (line 347) flips to True without raising KeyboardInterrupt.
+        installed: dict[str, Any] = {}
+
+        def fake_signal(sig: int, handler: Any) -> None:
+            if sig == signal.SIGINT:
+                installed["handler"] = handler
+
+        monkeypatch.setattr(cli.signal, "signal", fake_signal)
+        _write_bots(
+            cfg_path,
+            [{"_id": "a", "name": "alpha", "token": "t", "drop_channel": 1}],
+        )
+
+        def fake_sleep(_s: float) -> None:
+            if "handler" in installed:
+                # Invoke the registered SIGINT handler exactly like the OS
+                # would — flipping stop_requested so the next loop iteration
+                # exits cleanly.
+                installed["handler"](signal.SIGINT, None)
+                installed.pop("handler")  # only fire once
+
+        monkeypatch.setattr(cli.time, "sleep", fake_sleep)
+
+        rc = cli.main(["run"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Stopping bots" in out
+
+
+class TestRunPostStopDrain:
+    def test_drains_log_lines_emitted_after_stop(
+        self,
+        cfg_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Bot pre-seeded with NO logs; .stop() pushes a final line into the
+        # queue, exercising the 3-second post-stop drain loop (392-401).
+        class _LateLogBot(_FakeSelfBot):
+            def stop(self) -> None:
+                self.stopped = True
+                # Emitted after the main poll loop exited but before the
+                # drain deadline — must appear in stdout.
+                self.log_queue.put(("system", "farewell from bot"))
+
+            def __init__(self, cfg: dict[str, Any]) -> None:
+                # Skip the parent's pre-seeded "hello/kaboom" so the main
+                # poll loop has nothing to drain and exits via the
+                # not-any-drained break (line 401's neighborhood).
+                self.config = cfg
+                self.log_queue = queue.Queue()
+                self.status_callback = None
+                self.started = False
+                self.stopped = False
+                type(self).instances.append(self)
+
+        _LateLogBot.instances = []
+        monkeypatch.setattr(cli, "SelfBot", _LateLogBot)
+        monkeypatch.setattr(cli.signal, "signal", lambda *_a, **_k: None)
+        _write_bots(
+            cfg_path,
+            [{"_id": "a", "name": "alpha", "token": "t", "drop_channel": 1}],
+        )
+
+        # First sleep raises to break the poll loop; subsequent sleeps
+        # (during the drain) no-op so the test stays fast.
+        sleeps = {"n": 0}
+
+        def fake_sleep(_s: float) -> None:
+            sleeps["n"] += 1
+            if sleeps["n"] == 1:
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(cli.time, "sleep", fake_sleep)
+
+        # Compress the 3-second drain deadline so the test takes ms.
+        real_time = cli.time.time
+        deadline_box = {"t0": real_time()}
+
+        def fast_time() -> float:
+            # Jump 4 seconds forward after the second probe to expire the
+            # drain deadline once the late log has been drained.
+            deadline_box["t0"] += 0.01
+            return deadline_box["t0"]
+
+        monkeypatch.setattr(cli.time, "time", fast_time)
+
+        rc = cli.main(["run"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "farewell from bot" in out
+        assert "Done" in out
+
+
+# =====================================================================
+# main() argv parsing branches
+# =====================================================================
+
+
+class TestMainEntryPoint:
+    def test_reconfigure_failure_is_swallowed(
+        self, cfg_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Older Python or piped streams expose .reconfigure but raise on
+        # call — main() must not crash before argparse runs.
+        class _BadStream:
+            def reconfigure(self, **_kwargs: Any) -> None:
+                raise RuntimeError("piped stream rejects reconfigure")
+
+            def write(self, s: str) -> int:
+                return len(s)
+
+            def flush(self) -> None:
+                pass
+
+            def isatty(self) -> bool:
+                return False
+
+        monkeypatch.setattr(sys, "stdout", _BadStream())
+        monkeypatch.setattr(sys, "stderr", _BadStream())
+        # `list` on an empty config returns 0 — the cheapest path.
+        rc = cli.main(["list"])
+        assert rc == 0
+
+    def test_tty_color_path_calls_enable_vt(
+        self, cfg_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # When stdout.isatty() is True and --no-color is absent, main()
+        # takes the else branch on line 464 and calls _enable_windows_vt.
+        calls = {"n": 0}
+
+        def fake_enable() -> None:
+            calls["n"] += 1
+
+        # Pretend stdout is a TTY so the else branch fires.
+        fake_stream = io.StringIO()
+        fake_stream.isatty = lambda: True  # type: ignore[method-assign]
+        monkeypatch.setattr(sys, "stdout", fake_stream)
+        monkeypatch.setattr(cli, "_enable_windows_vt", fake_enable)
+        rc = cli.main(["list"])
+        assert rc == 0
+        assert calls["n"] == 1
+
+
+class TestMainGuard:
+    """`if __name__ == "__main__": sys.exit(main())` is unreachable from a
+    plain import. Exercise it via runpy so the line registers as covered."""
+
+    @pytest.mark.filterwarnings("ignore::RuntimeWarning")
+    def test_main_guard_executes_main_when_run_as_script(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Point CONFIG_PATH to an empty tmp dir so `list` returns 0 cleanly
+        # in the runpy'd module's namespace (no user data touched).
+        monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        monkeypatch.setattr(sys, "argv", ["sofi_manager.cli", "list"])
+
+        with pytest.raises(SystemExit) as exc:
+            runpy.run_module("sofi_manager.cli", run_name="__main__")
+        # `list` on an empty config exits 0.
+        assert exc.value.code == 0
