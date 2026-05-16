@@ -4,8 +4,11 @@ import time
 import unittest
 import unittest.mock
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import discord
+
+from sofi_manager import bot_core
 from sofi_manager.bot_core import (
     SOFI_ID,
     SelfBot,
@@ -372,10 +375,19 @@ class SecondsUntilTests(unittest.TestCase):
     def test_past_hour_wraps_to_tomorrow(self):
         # If we ask for "00:00" and the wall clock is past midnight, the
         # function must add a day rather than returning a negative value.
-        now = datetime.now()
-        past_hour = (now.hour - 1) % 24
-        result = _seconds_until(past_hour, 0)
-        self.assertGreater(result, 0)
+        # The previous host-clock-dependent variant was flaky at midnight
+        # (when (now.hour - 1) % 24 produced a future target), so we pin
+        # `datetime.now` to a known time and ask for an hour clearly in
+        # the past relative to that.
+        fixed_now = datetime(2026, 5, 16, 12, 0, 0)
+        with unittest.mock.patch("sofi_manager.bot_core.datetime") as fake_dt:
+            fake_dt.now.return_value = fixed_now
+            # Pass-through for any other datetime usage downstream.
+            fake_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = _seconds_until(8, 0)  # 4 hours in the past on the fixed clock
+        # ~20h wait (24h - 4h) because the target rolls to tomorrow.
+        self.assertGreater(result, 19 * 3600)
+        self.assertLess(result, 21 * 3600)
 
 
 class DrainAndCloseLoopExceptionTests(unittest.TestCase):
@@ -995,6 +1007,118 @@ class ConstantsTests(unittest.TestCase):
         # Guard against accidental drift between the module-level constant
         # and the default config value.
         self.assertEqual(default_config()["sofi_id"], SOFI_ID)
+
+
+def _fake_client_factory(start_fn):
+    """Build a discord.Client stand-in whose `start(token)` delegates to
+    `start_fn(token)`. Used to drive `_run()` through each exception arm
+    without a real Discord connection or worker thread."""
+
+    class FakeClient:
+        user = MagicMock()
+
+        def event(self, coro):
+            return coro
+
+        async def start(self, token):
+            await start_fn(token)
+
+        async def close(self):
+            pass
+
+        def get_channel(self, cid):
+            return None
+
+    return FakeClient
+
+
+class RunMethodTests(unittest.TestCase):
+    """`_run()` owns the worker-thread loop lifecycle and the status
+    transitions when Discord connection succeeds, fails, or is cancelled.
+    We call it synchronously by patching discord.Client."""
+
+    def _bot(self) -> SelfBot:
+        cfg = default_config()
+        cfg["token"] = "tok"
+        cfg["drop_channel"] = 111
+        cfg["all_channels"] = [111]
+        return SelfBot(cfg)
+
+    def test_run_login_failure_sets_error_status(self):
+        bot = self._bot()
+
+        async def boom(_token):
+            raise discord.LoginFailure("nope")
+
+        with patch.object(bot_core.discord, "Client", _fake_client_factory(boom)):
+            bot._run()
+
+        self.assertEqual(bot.status, SelfBot.STATUS_ERROR)
+        msgs = [text for _, text in list(bot.log_queue.queue)]
+        self.assertTrue(any("Token invalide" in m for m in msgs))
+        # finally branch must close the loop even on the error path.
+        assert bot._loop is not None
+        self.assertTrue(bot._loop.is_closed())
+
+    def test_run_generic_exception_sets_error_status(self):
+        bot = self._bot()
+
+        async def boom(_token):
+            raise RuntimeError("kaboom")
+
+        with patch.object(bot_core.discord, "Client", _fake_client_factory(boom)):
+            bot._run()
+
+        self.assertEqual(bot.status, SelfBot.STATUS_ERROR)
+        msgs = [text for _, text in list(bot.log_queue.queue)]
+        self.assertTrue(any("Erreur fatale" in m and "kaboom" in m for m in msgs))
+
+    def test_run_cancelled_error_transitions_to_stopped(self):
+        bot = self._bot()
+
+        async def cancel(_token):
+            raise asyncio.CancelledError()
+
+        with patch.object(bot_core.discord, "Client", _fake_client_factory(cancel)):
+            bot._run()
+
+        # CancelledError is swallowed; finally flips status to STOPPED.
+        self.assertEqual(bot.status, SelfBot.STATUS_STOPPED)
+        msgs = [text for _, text in list(bot.log_queue.queue)]
+        self.assertTrue(any("Bot arrêté" in m for m in msgs))
+
+    def test_run_normal_completion_transitions_to_stopped(self):
+        bot = self._bot()
+
+        async def quick(_token):
+            return None
+
+        with patch.object(bot_core.discord, "Client", _fake_client_factory(quick)):
+            bot._run()
+
+        self.assertEqual(bot.status, SelfBot.STATUS_STOPPED)
+        msgs = [text for _, text in list(bot.log_queue.queue)]
+        # The "Connexion en cours…" log line always fires before start().
+        self.assertTrue(any("Connexion en cours" in m for m in msgs))
+
+    def test_run_swallows_loop_drain_failure_on_exit(self):
+        bot = self._bot()
+
+        async def quick(_token):
+            return None
+
+        def boom_drain(_loop):
+            raise RuntimeError("drain blew up")
+
+        with (
+            patch.object(bot_core.discord, "Client", _fake_client_factory(quick)),
+            patch.object(bot_core, "_drain_and_close_loop", boom_drain),
+        ):
+            # finally block must swallow the drain error and still
+            # transition the bot to STOPPED.
+            bot._run()
+
+        self.assertEqual(bot.status, SelfBot.STATUS_STOPPED)
 
 
 if __name__ == "__main__":

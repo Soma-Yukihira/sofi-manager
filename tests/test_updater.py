@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import io
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
+import urllib.error
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -953,6 +955,161 @@ class CheckZipInBackground(unittest.TestCase):
             updater.check_zip_in_background(None, None, baseline.append, available.append)
         self.assertEqual(baseline, [])
         self.assertEqual(available, [])
+
+
+class _FakeResp:
+    """Minimal stand-in for urllib's HTTPResponse — supports the context
+    manager protocol, `.read()`, and `.headers.get()` used by the helpers."""
+
+    def __init__(self, body: bytes = b"", headers: dict[str, str] | None = None) -> None:
+        self._body = body
+        self.headers = headers or {}
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> _FakeResp:
+        return self
+
+    def __exit__(self, *_a: object) -> bool:
+        return False
+
+
+class HttpHelpers(unittest.TestCase):
+    """`_http_get_json` / `_http_get_link_header` / `_http_get_bytes` are
+    thin wrappers around urllib that the rest of the module mocks out.
+    Exercise them directly through a patched urlopen so the User-Agent
+    plumbing and the silent-on-error guards stay covered."""
+
+    def test_http_get_json_decodes_body(self):
+        body = b'{"sha": "abc", "n": 1}'
+        with patch("urllib.request.urlopen", return_value=_FakeResp(body)):
+            self.assertEqual(updater._http_get_json("https://example/api"), {"sha": "abc", "n": 1})
+
+    def test_http_get_link_header_returns_value(self):
+        resp = _FakeResp(b"", headers={"Link": '<u?page=2>; rel="last"'})
+        with patch("urllib.request.urlopen", return_value=resp):
+            self.assertEqual(
+                updater._http_get_link_header("https://example/api"), '<u?page=2>; rel="last"'
+            )
+
+    def test_http_get_link_header_returns_none_on_url_error(self):
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("dns")):
+            self.assertIsNone(updater._http_get_link_header("https://example/api"))
+
+    def test_http_get_link_header_returns_none_on_unexpected_exception(self):
+        # The broad `except Exception:` arm is a belt-and-suspenders guard
+        # against anything urllib's stack might throw beyond URLError/OSError.
+        with patch("urllib.request.urlopen", side_effect=RuntimeError("weird")):
+            self.assertIsNone(updater._http_get_link_header("https://example/api"))
+
+    def test_http_get_bytes_returns_payload(self):
+        with patch("urllib.request.urlopen", return_value=_FakeResp(b"payload-bytes")):
+            self.assertEqual(updater._http_get_bytes("https://example/zip"), b"payload-bytes")
+
+
+class FetchRemoteMainExceptionArms(unittest.TestCase):
+    """The Exception fallthrough on `fetch_remote_main_*` makes the launch
+    path crash-proof — a bug in the JSON parser or a urllib internal must
+    never surface as a traceback."""
+
+    def test_fetch_remote_main_count_returns_none_on_unexpected_exception(self):
+        with (
+            patch.object(updater, "_http_get_link_header", return_value=None),
+            patch.object(updater, "_http_get_json", side_effect=RuntimeError("weird")),
+        ):
+            self.assertIsNone(updater.fetch_remote_main_count())
+
+    def test_fetch_remote_main_info_returns_none_on_unexpected_exception(self):
+        with patch.object(updater, "_http_get_json", side_effect=RuntimeError("weird")):
+            self.assertIsNone(updater.fetch_remote_main_info())
+
+
+class ApplyZipExtras(unittest.TestCase):
+    """Branches in `_apply_zip_bytes` / `apply_zip_update` that the existing
+    happy-path tests don't reach."""
+
+    def test_explicit_directory_entry_creates_dir(self):
+        # Codeload sometimes includes explicit directory entries (name
+        # ending in '/'). The mkdir-then-continue branch must handle them
+        # without trying to open them as files.
+        buf = io.BytesIO()
+        prefix = "sofi-manager-abc/"
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(prefix, b"")
+            zf.writestr(prefix + "sub/", b"")  # explicit dir entry
+            zf.writestr(prefix + "sub/file.py", b"X")
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, msg = updater._apply_zip_bytes(buf.getvalue(), Path(tmp))
+            self.assertTrue(ok, msg)
+            self.assertTrue((Path(tmp) / "sub").is_dir())
+            self.assertEqual((Path(tmp) / "sub" / "file.py").read_bytes(), b"X")
+
+    def test_apply_zip_update_returns_false_when_extract_fails(self):
+        # _http_get_bytes succeeds, _apply_zip_bytes rejects: the wrapper
+        # must surface (False, msg, None) rather than the success tuple.
+        info = {"sha": "a" * 40, "count": 1, "date": "2026-01-01"}
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_info", return_value=info),
+            patch.object(updater, "_http_get_bytes", return_value=b"x"),
+            patch.object(updater, "_apply_zip_bytes", return_value=(False, "bad layout")),
+        ):
+            ok, msg, new_info = updater.apply_zip_update()
+        self.assertFalse(ok)
+        self.assertEqual(msg, "bad layout")
+        self.assertIsNone(new_info)
+
+
+class CheckZipInBackgroundExceptionArm(unittest.TestCase):
+    """The worker's bare `except Exception: pass` keeps a daemon-thread
+    crash from blowing past Python's default uncaught-exception handler
+    on GUI launch."""
+
+    def test_worker_swallows_unexpected_exception(self):
+        baseline: list = []
+        available: list = []
+
+        class _InlineThread:
+            def __init__(self, target, name=None, daemon=None):
+                self._t = target
+
+            def start(self):
+                self._t()
+
+        with (
+            patch.object(updater, "skip_reason", return_value="no-git"),
+            patch.object(updater, "fetch_remote_main_info", side_effect=RuntimeError("boom")),
+            patch.object(threading, "Thread", _InlineThread),
+        ):
+            updater.check_zip_in_background(None, None, baseline.append, available.append)
+
+        # Both callbacks stay empty; no exception propagates.
+        self.assertEqual(baseline, [])
+        self.assertEqual(available, [])
+
+
+class MiscDirectCalls(unittest.TestCase):
+    """Tiny helpers that other tests always mock out — invoked once here
+    so they show as covered."""
+
+    def test_is_git_clone_truthy_in_dev_checkout(self):
+        # The test suite itself is run from a git clone (`.git/` present).
+        self.assertTrue(updater.is_git_clone())
+
+    def test_restart_invokes_os_execv_with_python(self):
+        called: dict = {}
+
+        def fake_execv(prog, argv):
+            called["prog"] = prog
+            called["argv"] = list(argv)
+
+        with patch.object(updater.os, "execv", fake_execv):
+            updater._restart()
+
+        self.assertEqual(called["prog"], sys.executable)
+        # argv[0] echoes the interpreter so the new process can re-exec.
+        self.assertEqual(called["argv"][0], sys.executable)
 
 
 if __name__ == "__main__":
