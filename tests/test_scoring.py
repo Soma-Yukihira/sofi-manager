@@ -75,6 +75,29 @@ class ChooseCardTests(unittest.TestCase):
 
         self.assertEqual(selected, 1)
 
+    def test_wishlist_overridden_by_far_better_score(self):
+        # The wishlist match is much weaker than the best non-wishlist card,
+        # and the override threshold is low (1.0) so the best score wins.
+        # This pins down the "override warning" branch.
+        cfg = default_config()
+        cfg["wishlist"] = ["WishMatch"]
+        cfg["wishlist_series"] = []
+        cfg["wishlist_override_threshold"] = 1.0  # any improvement triggers override
+        cards = [
+            # WishMatch: high rarity (low score), few hearts → low score.
+            {"index": 0, "name": "WishMatch", "series": "S", "rarity": 1800, "hearts": 10},
+            # Top: low rarity (high score), many hearts → much higher score.
+            {"index": 1, "name": "Top", "series": "S", "rarity": 10, "hearts": 500},
+        ]
+
+        captured: list[tuple[str, str]] = []
+        selected = choose_card(cards, cfg, lambda lvl, msg: captured.append((lvl, msg)))
+
+        self.assertEqual(selected, 1)
+        # The override path logs a warning that names the ignored wishlist card.
+        warn_msgs = [m for lvl, m in captured if lvl == "warn"]
+        self.assertTrue(any("WishMatch" in m for m in warn_msgs))
+
 
 if __name__ == "__main__":
     unittest.main()

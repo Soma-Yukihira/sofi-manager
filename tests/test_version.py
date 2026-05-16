@@ -238,3 +238,145 @@ def test_version_info_is_frozen() -> None:
     # AttributeError) on assignment.
     with pytest.raises(AttributeError):
         v.sha = "tampered"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Private predicates and `_git` helper.
+# ---------------------------------------------------------------------------
+
+
+def test_is_frozen_default_false() -> None:
+    # Source checkouts never set sys.frozen.
+    assert version._is_frozen() is False
+
+
+def test_is_frozen_when_attribute_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert version._is_frozen() is True
+
+
+def test_is_git_clone_reflects_dot_git_presence() -> None:
+    # In this repo we always have a .git directory at test time; covers the
+    # truthy branch. (The False branch is implicitly exercised by frozen-mode
+    # tests above that monkey-patch _is_git_clone.)
+    assert isinstance(version._is_git_clone(), bool)
+
+
+def test_git_helper_invokes_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(args, **kwargs):  # type: ignore[no-untyped-def]
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return _cp(stdout="ok\n")
+
+    monkeypatch.setattr(version.subprocess, "run", fake_run)
+    result = version._git("status")
+    assert result.stdout == "ok\n"
+    assert captured["args"] == ["git", "status"]
+    assert captured["kwargs"]["cwd"] == str(version.ROOT)
+
+
+# ---------------------------------------------------------------------------
+# `_from_git` edge cases that the existing dispatch tests don't reach.
+# ---------------------------------------------------------------------------
+
+
+def test_from_git_returns_none_when_sha_empty() -> None:
+    # `git log` succeeded but its stdout split to an empty sha — treat as
+    # unknown rather than fabricating a VersionInfo with sha="".
+    with patch.object(version, "_git", return_value=_cp(stdout="|2026-05-15\n")):
+        assert version._from_git() is None
+
+
+def test_from_git_count_recovers_from_exception() -> None:
+    # First _git call (the log) succeeds, the second (rev-list) raises —
+    # the count must fall back to None instead of propagating the error.
+    log_cp = _cp(stdout="abc1234|2026-05-15\n")
+
+    call_count = {"n": 0}
+
+    def fake_git(*args: str) -> subprocess.CompletedProcess:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return log_cp
+        raise OSError("git binary vanished")
+
+    with patch.object(version, "_git", side_effect=fake_git):
+        info = version._from_git()
+
+    assert info is not None
+    assert info.sha == "abc1234"
+    assert info.count is None
+
+
+# ---------------------------------------------------------------------------
+# `_from_frozen` — exercised by injecting a fake `_build_info` module.
+# ---------------------------------------------------------------------------
+
+
+def test_from_frozen_returns_none_when_build_info_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No _build_info shipped — import should raise and the helper returns None.
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "sofi_manager._build_info", None)
+    assert version._from_frozen() is None
+
+
+def test_from_frozen_reads_baked_triple(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys as _sys
+    import types as _types
+
+    fake = _types.ModuleType("sofi_manager._build_info")
+    fake.BUILD_SHA = "deadbee"  # type: ignore[attr-defined]
+    fake.BUILD_COUNT = 200  # type: ignore[attr-defined]
+    fake.BUILD_DATE = "2026-05-16"  # type: ignore[attr-defined]
+    monkeypatch.setitem(_sys.modules, "sofi_manager._build_info", fake)
+
+    info = version._from_frozen()
+    assert info is not None
+    assert info.sha == "deadbee"
+    assert info.count == 200
+    assert info.date == "2026-05-16"
+    assert info.source == "frozen"
+
+
+def test_from_frozen_rejects_empty_sha(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys as _sys
+    import types as _types
+
+    fake = _types.ModuleType("sofi_manager._build_info")
+    fake.BUILD_SHA = ""  # type: ignore[attr-defined]
+    monkeypatch.setitem(_sys.modules, "sofi_manager._build_info", fake)
+    assert version._from_frozen() is None
+
+
+def test_from_frozen_rejects_non_string_sha(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys as _sys
+    import types as _types
+
+    fake = _types.ModuleType("sofi_manager._build_info")
+    fake.BUILD_SHA = 12345  # type: ignore[attr-defined]
+    monkeypatch.setitem(_sys.modules, "sofi_manager._build_info", fake)
+    assert version._from_frozen() is None
+
+
+def test_from_frozen_normalises_invalid_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys as _sys
+    import types as _types
+
+    fake = _types.ModuleType("sofi_manager._build_info")
+    fake.BUILD_SHA = "abc"  # type: ignore[attr-defined]
+    fake.BUILD_COUNT = "not-an-int"  # type: ignore[attr-defined]
+    fake.BUILD_DATE = 42  # not a string  # type: ignore[attr-defined]
+    monkeypatch.setitem(_sys.modules, "sofi_manager._build_info", fake)
+
+    info = version._from_frozen()
+    assert info is not None
+    assert info.sha == "abc"
+    assert info.count is None  # bad type → coerced to None
+    assert info.date == ""  # bad type → empty string
