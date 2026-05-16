@@ -113,12 +113,27 @@ def isolated_user_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return tmp_path
 
 
+# Tests that monkey-patch os.name to a *different* OS can't run cross-platform:
+# pathlib resolves Path → WindowsPath / PosixPath at call time, and instantiating
+# the wrong one for the actual host raises NotImplementedError. Each branch is
+# therefore only exercised on its native host (Windows + Ubuntu CI between
+# them give us full coverage of crypto._user_data_dir).
+
+
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="Windows branch needs WindowsPath to be instantiable — only on Windows.",
+)
 def test_user_data_dir_windows(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(crypto.os, "name", "nt")
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     assert crypto._user_data_dir() == tmp_path / "Roaming" / "sofi-manager"
 
 
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="Windows branch — see test above.",
+)
 def test_user_data_dir_windows_no_appdata(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(crypto.os, "name", "nt")
     monkeypatch.delenv("APPDATA", raising=False)
@@ -129,9 +144,7 @@ def test_user_data_dir_windows_no_appdata(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 @pytest.mark.skipif(
     os.name == "nt",
-    reason="POSIX branch can't be exercised on Windows: pathlib resolves Path "
-    "to PosixPath at call time when os.name is patched, which then refuses "
-    "to instantiate. The branch is covered in CI on ubuntu-latest.",
+    reason="POSIX branch needs PosixPath to be instantiable — only on POSIX.",
 )
 def test_user_data_dir_posix_xdg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(crypto.os, "name", "posix")
@@ -141,7 +154,7 @@ def test_user_data_dir_posix_xdg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 
 @pytest.mark.skipif(
     os.name == "nt",
-    reason="POSIX branch unreachable on Windows — see test above.",
+    reason="POSIX branch — see test above.",
 )
 def test_user_data_dir_posix_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(crypto.os, "name", "posix")
