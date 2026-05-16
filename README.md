@@ -11,6 +11,7 @@
 
 <p>
   <a href="https://github.com/Soma-Yukihira/sofi-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Soma-Yukihira/sofi-manager/ci.yml?branch=main&style=flat-square&labelColor=0a0a0a&color=d4af37&label=CI" alt="CI"></a>
+  <a href="https://codecov.io/gh/Soma-Yukihira/sofi-manager"><img src="https://img.shields.io/codecov/c/github/Soma-Yukihira/sofi-manager?style=flat-square&labelColor=0a0a0a&color=d4af37&label=coverage" alt="Coverage"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-d4af37?style=flat-square&labelColor=0a0a0a" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/license-MIT-d4af37?style=flat-square&labelColor=0a0a0a" alt="MIT License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-d4af37?style=flat-square&labelColor=0a0a0a" alt="Cross-platform">
@@ -44,6 +45,14 @@
 | :-----------------------------: | :----------------------------: |
 | ![Dark mode](docs/images/screenshot-dark.png) | ![Light mode](docs/images/screenshot-light.png) |
 | _Dark preset_                   | _Light preset_                 |
+
+<div align="center">
+
+![Changelog modal](docs/images/screenshot-changelog.png)
+
+_In-app changelog modal — markdown-rendered commit bodies between two SHAs_
+
+</div>
 
 ---
 
@@ -186,6 +195,49 @@ The [Wiki](../../wiki) covers each topic in depth:
 | [Architecture](../../wiki/Architecture) | How bots, threads and event loops are wired |
 | [Troubleshooting](../../wiki/Troubleshooting) | Common errors + the `📥 SOFI:` debug log |
 | [Discord ToS Notice](../../wiki/Discord-ToS) | Risks and what to expect |
+
+---
+
+## 🔧 Engineering highlights
+
+A few non-trivial pieces worth flagging if you're skimming the code:
+
+- **Three-shape auto-updater** — a single `skip_reason()` classifier routes
+  git clones (`git pull --ff-only` + re-exec), ZIP installs (codeload fetch +
+  in-place overwrite, with zip-slip guard) and frozen `.exe` builds (passive
+  amber banner) through the same banner UI. State baselines persist in
+  `settings.json`.
+- **Git-derived version, no manual bump** — `sofi_manager/version.py` builds
+  a `v<count> · <sha> · <date>` triple from `git rev-list` / `git log` at
+  runtime, with a `_build_info.py` baked at PyInstaller build time and a
+  third fallback for ZIP installs.
+- **In-app changelog modal** — post-update banner opens a scrollable list of
+  commits between the old and new SHA, fetched from the GitHub Compare API
+  and rendered with light markdown (headings, bullets, soft-wrapped
+  paragraphs). A sidebar link makes it reachable any time after.
+- **Encrypted token storage** — Fernet, with the key stored in the OS keyring
+  and a file fallback under `%APPDATA%/sofi-manager/`. Pre-existing plaintext
+  tokens upgrade transparently on first save.
+- **Multilingual SOFI parser** — pure regex helpers in
+  [`parsing.py`](sofi_manager/parsing.py) recognize both French
+  (`drop des cartes`) and English (`dropping cards`) drop and cooldown
+  messages. ~100% test coverage, no I/O.
+
+### Update flow at a glance
+
+```mermaid
+flowchart LR
+    A[App start] --> B{skip_reason}
+    B -->|None| C[git pull --ff-only<br/>+ re-exec]
+    B -->|no-git| D[ZIP codeload<br/>+ overwrite]
+    B -->|frozen| E[Amber banner<br/>rebuild required]
+    B -->|off-main / dirty / ahead| F[Silent<br/>menu surfaces on demand]
+```
+
+The git path is fast-forward only and refuses to touch the tree on a non-
+`main` branch, with local commits ahead, or with uncommitted modifications.
+See [Updating](../../wiki/Updating) for the user-facing flow and
+[Architecture](../../wiki/Architecture) for the threading and drop pipeline.
 
 ---
 

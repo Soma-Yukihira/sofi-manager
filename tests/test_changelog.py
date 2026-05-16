@@ -179,5 +179,128 @@ class FetchChangelog(unittest.TestCase):
         self.assertEqual(result.entries, ())
 
 
+class RenderBody(unittest.TestCase):
+    def test_empty_returns_empty_tuple(self):
+        self.assertEqual(changelog.render_body(""), ())
+
+    def test_single_paragraph(self):
+        blocks = changelog.render_body("just one line")
+        self.assertEqual(blocks, (changelog.Block("paragraph", "just one line", 0),))
+
+    def test_paragraph_collapses_soft_wraps(self):
+        blocks = changelog.render_body("line one\nline two\nline three")
+        self.assertEqual(
+            blocks,
+            (changelog.Block("paragraph", "line one line two line three", 0),),
+        )
+
+    def test_blank_line_separates_paragraphs(self):
+        blocks = changelog.render_body("para one\n\npara two")
+        self.assertEqual(
+            blocks,
+            (
+                changelog.Block("paragraph", "para one", 0),
+                changelog.Block("blank", "", 0),
+                changelog.Block("paragraph", "para two", 0),
+            ),
+        )
+
+    def test_consecutive_blanks_collapse(self):
+        blocks = changelog.render_body("a\n\n\n\nb")
+        kinds = [b.kind for b in blocks]
+        self.assertEqual(kinds, ["paragraph", "blank", "paragraph"])
+
+    def test_trailing_blanks_trimmed(self):
+        blocks = changelog.render_body("a\n\n\n")
+        self.assertEqual(blocks, (changelog.Block("paragraph", "a", 0),))
+
+    def test_h2_heading(self):
+        blocks = changelog.render_body("## Summary")
+        self.assertEqual(blocks, (changelog.Block("heading", "Summary", 1),))
+
+    def test_h3_heading(self):
+        blocks = changelog.render_body("### Detail")
+        self.assertEqual(blocks, (changelog.Block("heading", "Detail", 2),))
+
+    def test_h1_heading(self):
+        blocks = changelog.render_body("# Top")
+        self.assertEqual(blocks, (changelog.Block("heading", "Top", 0),))
+
+    def test_dash_bullets(self):
+        body = "- alpha\n- beta\n- gamma"
+        blocks = changelog.render_body(body)
+        self.assertEqual(
+            blocks,
+            (
+                changelog.Block("bullet", "alpha", 0),
+                changelog.Block("bullet", "beta", 0),
+                changelog.Block("bullet", "gamma", 0),
+            ),
+        )
+
+    def test_star_bullets_treated_like_dash(self):
+        blocks = changelog.render_body("* one\n* two")
+        kinds = [b.kind for b in blocks]
+        texts = [b.text for b in blocks]
+        self.assertEqual(kinds, ["bullet", "bullet"])
+        self.assertEqual(texts, ["one", "two"])
+
+    def test_nested_bullets_get_level(self):
+        blocks = changelog.render_body("- top\n  - nested\n    - deeper")
+        levels = [b.level for b in blocks]
+        self.assertEqual(levels, [0, 1, 2])
+
+    def test_task_list_marker_stripped(self):
+        blocks = changelog.render_body("- [ ] todo\n- [x] done")
+        self.assertEqual(
+            blocks,
+            (
+                changelog.Block("bullet", "todo", 0),
+                changelog.Block("bullet", "done", 0),
+            ),
+        )
+
+    def test_inline_bold_stripped(self):
+        blocks = changelog.render_body("- adds **important** thing")
+        self.assertEqual(blocks[0].text, "adds important thing")
+
+    def test_inline_code_stripped(self):
+        blocks = changelog.render_body("- updates `helper()`")
+        self.assertEqual(blocks[0].text, "updates helper()")
+
+    def test_inline_italic_stripped(self):
+        blocks = changelog.render_body("see *the docs* later")
+        self.assertEqual(blocks[0].text, "see the docs later")
+
+    def test_realistic_pr_body(self):
+        body = (
+            "## Summary\n"
+            "- adds X\n"
+            "- fixes Y\n"
+            "\n"
+            "## Test plan\n"
+            "- [ ] manual smoke\n"
+            "- [x] pytest green\n"
+        )
+        kinds = [b.kind for b in changelog.render_body(body)]
+        self.assertEqual(
+            kinds,
+            [
+                "heading",
+                "bullet",
+                "bullet",
+                "blank",
+                "heading",
+                "bullet",
+                "bullet",
+            ],
+        )
+
+    def test_paragraph_then_bullets_no_implicit_blank(self):
+        blocks = changelog.render_body("intro line\n- a\n- b")
+        kinds = [b.kind for b in blocks]
+        self.assertEqual(kinds, ["paragraph", "bullet", "bullet"])
+
+
 if __name__ == "__main__":
     unittest.main()

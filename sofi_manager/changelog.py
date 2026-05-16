@@ -14,9 +14,11 @@ without a network round-trip; the actual HTTP call delegates to
 
 from __future__ import annotations
 
+import re
 import urllib.error
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from . import updater, version
 
@@ -122,6 +124,98 @@ def parse_compare_payload(data: object) -> tuple[ChangelogEntry, ...]:
 
 def compare_api_url(old_sha: str, new_sha: str) -> str:
     return _COMPARE_API_TEMPLATE.format(base=old_sha, head=new_sha)
+
+
+BlockKind = Literal["heading", "bullet", "paragraph", "blank"]
+
+
+@dataclass(frozen=True)
+class Block:
+    """One block of rendered commit-body markdown.
+
+    `level` carries the heading depth (`## ` → 1, `### ` → 2, `# ` → 0)
+    or the bullet indent depth (top-level bullet → 0, nested → 1+).
+    Always 0 for paragraph and blank blocks.
+    """
+
+    kind: BlockKind
+    text: str
+    level: int = 0
+
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_ITALIC_RE = re.compile(r"(?<![*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\w)")
+_CODE_RE = re.compile(r"`([^`\n]+)`")
+_BULLET_RE = re.compile(r"^[-*]\s+(.*)$")
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_TASK_RE = re.compile(r"^\[[ xX]\]\s+")
+
+
+def _strip_inline(s: str) -> str:
+    """Drop GitHub-flavored inline marks while keeping the inner text.
+
+    Bold (`**x**`), italic (`*x*`), and code (`` `x` ``) collapse to
+    their inner text. Inline rendering would require per-run widget
+    layout in CTk, which fights wrapping; the modal compensates with
+    per-block typography (heading font, bullet glyph) instead.
+    """
+    s = _BOLD_RE.sub(r"\1", s)
+    s = _ITALIC_RE.sub(r"\1", s)
+    s = _CODE_RE.sub(r"\1", s)
+    return s
+
+
+def render_body(text: str) -> tuple[Block, ...]:
+    """Parse a commit-message body into renderable blocks.
+
+    Handles `## Headings`, `- bullets` (or `*`), GitHub task lists
+    (`- [ ]` / `- [x]`), and paragraphs (lines collapsed with a single
+    space, like GFM). Inline marks are stripped — see `_strip_inline`.
+    Consecutive blank lines collapse to a single blank block; trailing
+    blanks are trimmed.
+    """
+    if not text:
+        return ()
+    blocks: list[Block] = []
+    paragraph_buf: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph_buf:
+            joined = " ".join(paragraph_buf).strip()
+            if joined:
+                blocks.append(Block("paragraph", joined, 0))
+            paragraph_buf.clear()
+
+    def push_blank() -> None:
+        if blocks and blocks[-1].kind != "blank":
+            blocks.append(Block("blank", "", 0))
+
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            flush_paragraph()
+            push_blank()
+            continue
+        heading_match = _HEADING_RE.match(stripped)
+        if heading_match:
+            flush_paragraph()
+            level = max(0, len(heading_match.group(1)) - 1)
+            blocks.append(Block("heading", _strip_inline(heading_match.group(2)), level))
+            continue
+        # Bullet detection uses the raw line so leading indent maps to nesting.
+        bullet_match = _BULLET_RE.match(raw.lstrip())
+        if bullet_match:
+            flush_paragraph()
+            indent = len(raw) - len(raw.lstrip())
+            level = indent // 2
+            inner = _TASK_RE.sub("", bullet_match.group(1).strip())
+            blocks.append(Block("bullet", _strip_inline(inner), level))
+            continue
+        paragraph_buf.append(_strip_inline(stripped))
+    flush_paragraph()
+    while blocks and blocks[-1].kind == "blank":
+        blocks.pop()
+    return tuple(blocks)
 
 
 def fetch_changelog(
