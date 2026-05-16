@@ -18,9 +18,7 @@ def test_bundle_dir_in_source_returns_project_root() -> None:
     assert result == Path(paths.__file__).resolve().parent.parent
 
 
-def test_bundle_dir_frozen_uses_meipass(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_bundle_dir_frozen_uses_meipass(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "meipass"), raising=False)
     assert paths.bundle_dir() == Path(str(tmp_path / "meipass"))

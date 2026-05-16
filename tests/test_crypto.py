@@ -119,9 +119,7 @@ def test_user_data_dir_windows(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert crypto._user_data_dir() == tmp_path / "Roaming" / "sofi-manager"
 
 
-def test_user_data_dir_windows_no_appdata(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_user_data_dir_windows_no_appdata(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(crypto.os, "name", "nt")
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
@@ -145,9 +143,7 @@ def test_user_data_dir_posix_xdg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     os.name == "nt",
     reason="POSIX branch unreachable on Windows — see test above.",
 )
-def test_user_data_dir_posix_default(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_user_data_dir_posix_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(crypto.os, "name", "posix")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
@@ -266,7 +262,9 @@ def test_load_or_create_key_generates_and_writes_keyring(
 ) -> None:
     key = crypto._load_or_create_key()
     # Stored in keyring, file fallback untouched.
-    assert fake_keyring.store[(crypto._KEYRING_SERVICE, crypto._KEYRING_USER)] == key.decode("ascii")
+    assert fake_keyring.store[(crypto._KEYRING_SERVICE, crypto._KEYRING_USER)] == key.decode(
+        "ascii"
+    )
     assert not (isolated_user_dir / "key").exists()
 
 

@@ -63,9 +63,7 @@ def test_cleanup_skips_when_package_dir_missing(
     _migrations.cleanup_legacy_root_files()
 
 
-def test_cleanup_swallows_unlink_errors(
-    fake_repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cleanup_swallows_unlink_errors(fake_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (fake_repo / "bot_core.py").write_text("# locked\n", encoding="utf-8")
     original_unlink = Path.unlink
 

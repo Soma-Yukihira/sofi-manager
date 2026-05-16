@@ -597,6 +597,7 @@ class StopWithCancellableWorkTests(unittest.TestCase):
         drop_t, cd_t, night_t, wd_t = fut.result(timeout=1)
 
         client = MagicMock()
+
         # client.close returns a coroutine; the stop() helper awaits it.
         async def close_ok() -> None:
             return None
@@ -649,9 +650,7 @@ class AsyncLoopTests(unittest.TestCase):
             unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", fake_sleep),
             # Force the random extra cooldown to a stable value so the assertion
             # below isn't flaky.
-            unittest.mock.patch(
-                "sofi_manager.bot_core.random.uniform", return_value=10.0
-            ),
+            unittest.mock.patch("sofi_manager.bot_core.random.uniform", return_value=10.0),
         ):
             self._run(bot._handle_cooldown(30))
 
@@ -665,10 +664,9 @@ class AsyncLoopTests(unittest.TestCase):
         async def cancelled_sleep(seconds: float) -> None:
             raise asyncio.CancelledError
 
-        with unittest.mock.patch(
-            "sofi_manager.bot_core.asyncio.sleep", cancelled_sleep
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core.random.uniform", return_value=5.0
+        with (
+            unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", cancelled_sleep),
+            unittest.mock.patch("sofi_manager.bot_core.random.uniform", return_value=5.0),
         ):
             # Must not raise — CancelledError is caught by the helper.
             self._run(bot._handle_cooldown(30))
@@ -727,9 +725,10 @@ class AsyncLoopTests(unittest.TestCase):
             # First iteration's post-send sleep — cancel ourselves to exit.
             raise asyncio.CancelledError
 
-        with unittest.mock.patch(
-            "sofi_manager.bot_core.asyncio.sleep", fake_sleep
-        ), self.assertRaises(asyncio.CancelledError):
+        with (
+            unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", fake_sleep),
+            self.assertRaises(asyncio.CancelledError),
+        ):
             self._run(bot._drop_loop())
 
         msgs = [text for _, text in list(bot.log_queue.queue)]
@@ -757,9 +756,10 @@ class AsyncLoopTests(unittest.TestCase):
                 # Break out of the while-True on the second iteration.
                 raise asyncio.CancelledError
 
-        with unittest.mock.patch(
-            "sofi_manager.bot_core.asyncio.sleep", fake_sleep
-        ), self.assertRaises(asyncio.CancelledError):
+        with (
+            unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", fake_sleep),
+            self.assertRaises(asyncio.CancelledError),
+        ):
             self._run(bot._drop_loop())
 
         msgs = [text for _, text in list(bot.log_queue.queue)]
@@ -784,15 +784,13 @@ class AsyncLoopTests(unittest.TestCase):
             if sleep_count["n"] >= 3:
                 raise asyncio.CancelledError
 
-        with unittest.mock.patch(
-            "sofi_manager.bot_core.asyncio.sleep", fake_sleep
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core._seconds_until", return_value=10.0
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core.random.randint", return_value=0
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core.random.uniform", return_value=100.0
-        ), self.assertRaises(asyncio.CancelledError):
+        with (
+            unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", fake_sleep),
+            unittest.mock.patch("sofi_manager.bot_core._seconds_until", return_value=10.0),
+            unittest.mock.patch("sofi_manager.bot_core.random.randint", return_value=0),
+            unittest.mock.patch("sofi_manager.bot_core.random.uniform", return_value=100.0),
+            self.assertRaises(asyncio.CancelledError),
+        ):
             self._run(bot._night_pause_loop())
 
         msgs = [text for _, text in list(bot.log_queue.queue)]
@@ -818,15 +816,9 @@ class AsyncLoopTests(unittest.TestCase):
             unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", fake_sleep),
             # _seconds_until returns a 24h+ value on a freshly-faked clock
             # only rarely; pin the wait to a small positive number.
-            unittest.mock.patch(
-                "sofi_manager.bot_core._seconds_until", return_value=10.0
-            ),
-            unittest.mock.patch(
-                "sofi_manager.bot_core.random.randint", return_value=0
-            ),
-            unittest.mock.patch(
-                "sofi_manager.bot_core.random.uniform", return_value=100.0
-            ),
+            unittest.mock.patch("sofi_manager.bot_core._seconds_until", return_value=10.0),
+            unittest.mock.patch("sofi_manager.bot_core.random.randint", return_value=0),
+            unittest.mock.patch("sofi_manager.bot_core.random.uniform", return_value=100.0),
             self.assertRaises(asyncio.CancelledError),
         ):
             self._run(bot._night_pause_loop())
@@ -846,14 +838,15 @@ class AsyncLoopTests(unittest.TestCase):
         async def fake_sleep(_seconds: float) -> None:
             raise asyncio.CancelledError
 
-        with unittest.mock.patch(
-            "sofi_manager.bot_core.asyncio.sleep", fake_sleep
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core._seconds_until",
-            return_value=25 * 3600.0,
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core.random.randint", return_value=0
-        ), self.assertRaises(asyncio.CancelledError):
+        with (
+            unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", fake_sleep),
+            unittest.mock.patch(
+                "sofi_manager.bot_core._seconds_until",
+                return_value=25 * 3600.0,
+            ),
+            unittest.mock.patch("sofi_manager.bot_core.random.randint", return_value=0),
+            self.assertRaises(asyncio.CancelledError),
+        ):
             self._run(bot._night_pause_loop())
 
         msgs = [text for _, text in list(bot.log_queue.queue)]
@@ -883,15 +876,13 @@ class AsyncLoopTests(unittest.TestCase):
                 return
             raise asyncio.CancelledError
 
-        with unittest.mock.patch(
-            "sofi_manager.bot_core.asyncio.sleep", fake_sleep
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core._seconds_until", return_value=10.0
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core.random.randint", return_value=0
-        ), unittest.mock.patch(
-            "sofi_manager.bot_core.random.uniform", return_value=100.0
-        ), self.assertRaises(asyncio.CancelledError):
+        with (
+            unittest.mock.patch("sofi_manager.bot_core.asyncio.sleep", fake_sleep),
+            unittest.mock.patch("sofi_manager.bot_core._seconds_until", return_value=10.0),
+            unittest.mock.patch("sofi_manager.bot_core.random.randint", return_value=0),
+            unittest.mock.patch("sofi_manager.bot_core.random.uniform", return_value=100.0),
+            self.assertRaises(asyncio.CancelledError),
+        ):
             self._run(bot._night_pause_loop())
 
         drop.cancel.assert_called_once()
