@@ -8,6 +8,7 @@ header routing, etc.) runs end-to-end without a real event loop."""
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1236,3 +1237,652 @@ def test_drain_logs_skips_bots_without_instance(app: gui.SelfbotManagerApp) -> N
     app.after = MagicMock()
     app._drain_logs()
     app.after.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _export_stats_csv
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def stats_app(app: gui.SelfbotManagerApp) -> gui.SelfbotManagerApp:
+    """`app` plus the bits `_export_stats_csv` needs: a filter accessor + a
+    stand-in for the modal parent (`self`)."""
+    app._stats_filter_all = "Tous"
+    app.stats_bot_filter_var = SimpleNamespace(get=lambda: "Tous")
+    return app
+
+
+def test_export_stats_csv_cancel_returns_early(
+    stats_app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui.filedialog, "asksaveasfilename", lambda **_: "")
+    iter_grabs = MagicMock()
+    monkeypatch.setattr(gui.storage, "iter_grabs", iter_grabs)
+    stats_app._export_stats_csv()
+    iter_grabs.assert_not_called()
+
+
+def test_export_stats_csv_writes_file_and_reports_success(
+    stats_app: gui.SelfbotManagerApp, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "grabs.csv"
+    monkeypatch.setattr(gui.filedialog, "asksaveasfilename", lambda **_: str(out))
+    monkeypatch.setattr(gui.storage, "iter_grabs", lambda bot_label=None: iter([1, 2, 3]))
+    monkeypatch.setattr(gui.storage, "export_csv", lambda records, f: sum(1 for _ in records))
+    info = MagicMock()
+    monkeypatch.setattr(gui.messagebox, "showinfo", info)
+    stats_app._export_stats_csv()
+    assert out.exists()
+    # Success messagebox includes record count + scope hint.
+    args = info.call_args.args
+    assert "3 grabs" in args[1]
+    assert "tous bots" in args[1]
+
+
+def test_export_stats_csv_specific_bot_scope_passed_to_iter(
+    stats_app: gui.SelfbotManagerApp, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stats_app.stats_bot_filter_var = SimpleNamespace(get=lambda: "alpha")
+    monkeypatch.setattr(gui.filedialog, "asksaveasfilename", lambda **_: str(tmp_path / "out.csv"))
+    seen_scope: dict[str, Any] = {}
+
+    def _iter(bot_label: Any = None) -> Any:
+        seen_scope["scope"] = bot_label
+        return iter([])
+
+    monkeypatch.setattr(gui.storage, "iter_grabs", _iter)
+    monkeypatch.setattr(gui.storage, "export_csv", lambda records, f: 0)
+    monkeypatch.setattr(gui.messagebox, "showinfo", MagicMock())
+    stats_app._export_stats_csv()
+    assert seen_scope["scope"] == "alpha"
+
+
+def test_export_stats_csv_db_read_failure_shows_error(
+    stats_app: gui.SelfbotManagerApp, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui.filedialog, "asksaveasfilename", lambda **_: str(tmp_path / "x.csv"))
+
+    def _boom(bot_label: Any = None) -> Any:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(gui.storage, "iter_grabs", _boom)
+    err = MagicMock()
+    monkeypatch.setattr(gui.messagebox, "showerror", err)
+    stats_app._export_stats_csv()
+    err.assert_called_once()
+    assert "RuntimeError" in err.call_args.args[1]
+
+
+def test_export_stats_csv_oserror_during_write_shows_error(
+    stats_app: gui.SelfbotManagerApp, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui.filedialog, "asksaveasfilename", lambda **_: str(tmp_path / "y.csv"))
+    monkeypatch.setattr(gui.storage, "iter_grabs", lambda bot_label=None: iter([]))
+
+    def _open_fails(*_a: Any, **_kw: Any) -> Any:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("builtins.open", _open_fails)
+    err = MagicMock()
+    monkeypatch.setattr(gui.messagebox, "showerror", err)
+    info = MagicMock()
+    monkeypatch.setattr(gui.messagebox, "showinfo", info)
+    stats_app._export_stats_csv()
+    err.assert_called_once()
+    info.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _register_bot
+# ---------------------------------------------------------------------------
+
+
+def _stub_bot_list_entry(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Replace BotListEntry with a MagicMock factory so _register_bot can run
+    without instantiating Tk widgets."""
+    factory = MagicMock(name="BotListEntry_factory")
+
+    def _make(*a: Any, **kw: Any) -> Any:
+        inst = MagicMock(name="BotListEntry_instance")
+        factory(*a, **kw)
+        return inst
+
+    monkeypatch.setattr(gui, "BotListEntry", _make)
+    return factory
+
+
+def test_register_bot_assigns_uuid_when_absent(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bot_list_entry(monkeypatch)
+    app.bot_list = MagicMock()
+    cfg: dict[str, Any] = {"name": "alpha"}
+    bot_id = app._register_bot(cfg)
+    assert bot_id == cfg["_id"]
+    assert bot_id  # non-empty
+    assert app.bots[bot_id]["config"] is cfg
+
+
+def test_register_bot_reuses_existing_id(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bot_list_entry(monkeypatch)
+    app.bot_list = MagicMock()
+    cfg = {"_id": "fixed-id", "name": "beta"}
+    bot_id = app._register_bot(cfg)
+    assert bot_id == "fixed-id"
+    assert "fixed-id" in app.bots
+
+
+def test_register_bot_default_buffer_when_none(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bot_list_entry(monkeypatch)
+    app.bot_list = MagicMock()
+    bot_id = app._register_bot({"name": "x"})
+    assert app.bots[bot_id]["log_buffer"] == []
+
+
+def test_register_bot_keeps_provided_buffer(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bot_list_entry(monkeypatch)
+    app.bot_list = MagicMock()
+    buf: list[tuple[str, str]] = [("info", "hi")]
+    bot_id = app._register_bot({"name": "x"}, log_buffer=buf)
+    # Same object, not a copy.
+    assert app.bots[bot_id]["log_buffer"] is buf
+
+
+def test_register_bot_wires_status_callback_when_instance_supplied(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bot_list_entry(monkeypatch)
+    app.bot_list = MagicMock()
+    instance = SimpleNamespace(status="running", status_callback=None)
+    captured: list[tuple[str, str]] = []
+    app._on_bot_status_change = lambda bid, s: captured.append((bid, s))
+    bot_id = app._register_bot({"name": "y"}, instance=instance)
+    assert app.bots[bot_id]["instance"] is instance
+    # Firing the wired callback round-trips through `self.after(0, ...)` →
+    # the `app` fixture runs `after` synchronously.
+    instance.status_callback("error")
+    assert captured == [(bot_id, "error")]
+
+
+def test_register_bot_skips_status_callback_when_no_instance(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bot_list_entry(monkeypatch)
+    app.bot_list = MagicMock()
+    bot_id = app._register_bot({"name": "z"})
+    # No instance recorded → no callback path to break.
+    assert app.bots[bot_id]["instance"] is None
+
+
+# ---------------------------------------------------------------------------
+# _on_close
+# ---------------------------------------------------------------------------
+
+
+def test_on_close_persists_and_stops_all(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    save_settings_mock = MagicMock()
+    monkeypatch.setattr(gui, "save_settings", save_settings_mock)
+    app._stats_refresh_after_id = None
+    app.protocol = MagicMock()
+    app._stop_all_async = MagicMock()
+    app.destroy = MagicMock()
+    app.selected_id = None
+
+    app._on_close()
+
+    app._collect_form_into_config.assert_not_called()  # no selection
+    app._persist.assert_called_once()
+    save_settings_mock.assert_called_once_with(app.settings)
+    app._stop_all_async.assert_called_once_with(then=app.destroy)
+
+
+def test_on_close_collects_selected_form(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui, "save_settings", MagicMock())
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._stats_refresh_after_id = None
+    app.protocol = MagicMock()
+    app._stop_all_async = MagicMock()
+    app.destroy = MagicMock()
+    app.selected_id = "bid"
+
+    app._on_close()
+    app._collect_form_into_config.assert_called_once_with("bid")
+
+
+def test_on_close_swallows_collect_error(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui, "save_settings", MagicMock())
+    app._collect_form_into_config = MagicMock(side_effect=RuntimeError("boom"))
+    app._persist = MagicMock()
+    app._stats_refresh_after_id = None
+    app.protocol = MagicMock()
+    app._stop_all_async = MagicMock()
+    app.destroy = MagicMock()
+    app.selected_id = "bid"
+
+    app._on_close()  # must not raise
+    # Persist still runs even if form collection failed.
+    app._persist.assert_called_once()
+
+
+def test_on_close_cancels_pending_stats_refresh(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui, "save_settings", MagicMock())
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._stats_refresh_after_id = "after#42"
+    app.after_cancel = MagicMock()
+    app.protocol = MagicMock()
+    app._stop_all_async = MagicMock()
+    app.destroy = MagicMock()
+    app.selected_id = None
+
+    app._on_close()
+    app.after_cancel.assert_called_once_with("after#42")
+    assert app._stats_refresh_after_id is None
+
+
+def test_on_close_swallows_after_cancel_error(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui, "save_settings", MagicMock())
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._stats_refresh_after_id = "after#42"
+    app.after_cancel = MagicMock(side_effect=RuntimeError("no such id"))
+    app.protocol = MagicMock()
+    app._stop_all_async = MagicMock()
+    app.destroy = MagicMock()
+    app.selected_id = None
+
+    app._on_close()
+    # Cleared regardless.
+    assert app._stats_refresh_after_id is None
+
+
+def test_on_close_rebinds_protocol_to_noop(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui, "save_settings", MagicMock())
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._stats_refresh_after_id = None
+    proto_calls: list[tuple[str, Any]] = []
+    app.protocol = lambda event, fn: proto_calls.append((event, fn))
+    app._stop_all_async = MagicMock()
+    app.destroy = MagicMock()
+    app.selected_id = None
+
+    app._on_close()
+    assert proto_calls and proto_calls[-1][0] == "WM_DELETE_WINDOW"
+    # Calling the no-op shouldn't raise.
+    proto_calls[-1][1]()
+
+
+def test_on_close_swallows_protocol_error(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gui, "save_settings", MagicMock())
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._stats_refresh_after_id = None
+    app.protocol = MagicMock(side_effect=RuntimeError("late"))
+    app._stop_all_async = MagicMock()
+    app.destroy = MagicMock()
+    app.selected_id = None
+
+    app._on_close()  # must not raise
+    app._stop_all_async.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _wire_changelog_link
+# ---------------------------------------------------------------------------
+
+
+def test_wire_changelog_link_noop_when_link_missing(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app.changelog_link = None
+    app._wire_changelog_link()  # must not raise
+
+
+def test_wire_changelog_link_inactive_when_no_base_sha(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app.changelog_link = MagicMock()
+    # No `last_changelog_base_sha` in settings → inactive branch.
+    app._wire_changelog_link()
+    # Should NOT bind a click handler.
+    bind_calls = app.changelog_link.bind.call_args_list
+    sequences = [c.args[0] for c in bind_calls]
+    assert "<Button-1>" not in sequences
+    # Cursor cleared, hover wired to tooltip show/hide.
+    assert "<Enter>" in sequences
+    assert "<Leave>" in sequences
+
+
+def test_wire_changelog_link_active_when_base_sha_present(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app.changelog_link = MagicMock()
+    app.settings["last_changelog_base_sha"] = "old1234"
+    app._wire_changelog_link()
+    sequences = [c.args[0] for c in app.changelog_link.bind.call_args_list]
+    # Active branch: cursor=hand2 + Button-1 wired.
+    assert "<Button-1>" in sequences
+    # Cursor was set to hand2 at least once.
+    cursor_calls = [
+        c.kwargs.get("cursor")
+        for c in app.changelog_link.configure.call_args_list
+        if "cursor" in c.kwargs
+    ]
+    assert "hand2" in cursor_calls
+
+
+def test_wire_changelog_link_swallows_unbind_error(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    link = MagicMock()
+    link.unbind.side_effect = RuntimeError("never bound")
+    app.changelog_link = link
+    app._wire_changelog_link()  # no raise; bindings still applied
+
+
+def test_wire_changelog_link_swallows_cursor_error_active(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    link = MagicMock()
+    link.configure.side_effect = [None, RuntimeError("late"), None]
+    app.changelog_link = link
+    app.settings["last_changelog_base_sha"] = "old"
+    app._wire_changelog_link()  # no raise
+
+
+def test_wire_changelog_link_swallows_cursor_error_inactive(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    link = MagicMock()
+    link.configure.side_effect = [None, RuntimeError("late")]
+    app.changelog_link = link
+    app._wire_changelog_link()  # no raise
+
+
+# ---------------------------------------------------------------------------
+# _show_changelog_tooltip / _hide_changelog_tooltip
+# ---------------------------------------------------------------------------
+
+
+def test_show_changelog_tooltip_noop_when_already_visible(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    sentinel = object()
+    app._changelog_tooltip = sentinel
+    app.changelog_link = MagicMock()
+    app._show_changelog_tooltip()
+    assert app._changelog_tooltip is sentinel
+
+
+def test_show_changelog_tooltip_noop_when_link_missing(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app._changelog_tooltip = None
+    app.changelog_link = None
+    app._show_changelog_tooltip()
+    assert app._changelog_tooltip is None
+
+
+def test_show_changelog_tooltip_creates_toplevel(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app._changelog_tooltip = None
+    link = MagicMock()
+    link.winfo_rootx.return_value = 100
+    link.winfo_rooty.return_value = 200
+    link.winfo_width.return_value = 80
+    app.changelog_link = link
+
+    tip_mock = MagicMock(name="tip")
+    monkeypatch.setattr(gui.tk, "Toplevel", lambda *a, **kw: tip_mock)
+    monkeypatch.setattr(gui.tk, "Label", lambda *a, **kw: MagicMock())
+
+    app._show_changelog_tooltip()
+    assert app._changelog_tooltip is tip_mock
+    tip_mock.wm_overrideredirect.assert_called_once_with(True)
+    tip_mock.wm_geometry.assert_called_once()
+
+
+def test_show_changelog_tooltip_swallows_toplevel_error(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app._changelog_tooltip = None
+    app.changelog_link = MagicMock()
+    monkeypatch.setattr(gui.tk, "Toplevel", MagicMock(side_effect=RuntimeError("no root")))
+    app._show_changelog_tooltip()
+    assert app._changelog_tooltip is None
+
+
+def test_hide_changelog_tooltip_noop_when_absent(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app._changelog_tooltip = None
+    app._hide_changelog_tooltip()  # no raise
+
+
+def test_hide_changelog_tooltip_destroys_and_clears(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    tip = MagicMock()
+    app._changelog_tooltip = tip
+    app._hide_changelog_tooltip()
+    tip.destroy.assert_called_once()
+    assert app._changelog_tooltip is None
+
+
+def test_hide_changelog_tooltip_swallows_destroy_error(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    tip = MagicMock()
+    tip.destroy.side_effect = RuntimeError("gone")
+    app._changelog_tooltip = tip
+    app._hide_changelog_tooltip()
+    assert app._changelog_tooltip is None
+
+
+# ---------------------------------------------------------------------------
+# _add_bot
+# ---------------------------------------------------------------------------
+
+
+def test_add_bot_registers_and_selects(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bot_list_entry(monkeypatch)
+    app.bot_list = MagicMock()
+    app._select_bot = MagicMock()
+    app._persist = MagicMock()
+    app._add_bot()
+    assert app.bots  # at least one bot registered
+    bot_id = next(iter(app.bots))
+    app._select_bot.assert_called_once_with(bot_id)
+    app._persist.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _stop_bot_async / _stop_all_async
+# ---------------------------------------------------------------------------
+
+
+def test_stop_bot_async_invokes_stop_and_done(
+    app: gui.SelfbotManagerApp, sync_thread: None
+) -> None:
+    instance = MagicMock()
+    done = MagicMock()
+    app._stop_bot_async(instance, on_done=done)
+    instance.stop.assert_called_once()
+    done.assert_called_once()
+
+
+def test_stop_bot_async_swallows_stop_error(app: gui.SelfbotManagerApp, sync_thread: None) -> None:
+    instance = MagicMock()
+    instance.stop.side_effect = RuntimeError("nope")
+    done = MagicMock()
+    app._stop_bot_async(instance, on_done=done)
+    done.assert_called_once()  # still fired
+
+
+def test_stop_bot_async_no_callback(app: gui.SelfbotManagerApp, sync_thread: None) -> None:
+    instance = MagicMock()
+    app._stop_bot_async(instance, on_done=None)
+    instance.stop.assert_called_once()
+
+
+def test_stop_bot_async_swallows_after_error(
+    app: gui.SelfbotManagerApp,
+    sync_thread: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance = MagicMock()
+    done = MagicMock()
+    # `after` raises when scheduling on_done → must be swallowed.
+    app.after = MagicMock(side_effect=RuntimeError("destroyed"))
+    app._stop_bot_async(instance, on_done=done)
+    instance.stop.assert_called_once()
+
+
+def test_stop_all_async_empty_calls_then_directly(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app.bots = {}
+    done = MagicMock()
+    after_mock = MagicMock()
+    app.after = after_mock
+    app._stop_all_async(then=done)
+    # Empty → fires `after(0, done)` exactly once.
+    after_mock.assert_called_once_with(0, done)
+
+
+def test_stop_all_async_empty_no_callback_returns(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app.bots = {}
+    app.after = MagicMock()
+    app._stop_all_async(then=None)
+    app.after.assert_not_called()
+
+
+def test_stop_all_async_fires_then_after_all_stops(
+    app: gui.SelfbotManagerApp, sync_thread: None
+) -> None:
+    inst_a = MagicMock()
+    inst_b = MagicMock()
+    app.bots = {
+        "a": {"instance": inst_a},
+        "b": {"instance": inst_b},
+    }
+    done = MagicMock()
+    # `after` runs scheduled callables synchronously already.
+    app._stop_all_async(then=done)
+    inst_a.stop.assert_called_once()
+    inst_b.stop.assert_called_once()
+    done.assert_called_once()
+
+
+def test_stop_all_async_only_fires_then_once(app: gui.SelfbotManagerApp, sync_thread: None) -> None:
+    inst = MagicMock()
+    app.bots = {"a": {"instance": inst}}
+    fire_count = {"n": 0}
+
+    def _then() -> None:
+        fire_count["n"] += 1
+
+    app._stop_all_async(then=_then)
+    # _fire is scheduled both by the worker (lock-protected) and by the
+    # max_wait safety ceiling — but the `fired` flag guarantees one call.
+    assert fire_count["n"] == 1
+
+
+def test_stop_all_async_swallows_stop_error(app: gui.SelfbotManagerApp, sync_thread: None) -> None:
+    inst = MagicMock()
+    inst.stop.side_effect = RuntimeError("nope")
+    app.bots = {"a": {"instance": inst}}
+    done = MagicMock()
+    app._stop_all_async(then=done)
+    done.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _stop_current
+# ---------------------------------------------------------------------------
+
+
+def test_stop_current_no_selection(app: gui.SelfbotManagerApp) -> None:
+    app.selected_id = None
+    app._stop_bot_async = MagicMock()
+    app._stop_current()
+    app._stop_bot_async.assert_not_called()
+
+
+def test_stop_current_no_instance(app: gui.SelfbotManagerApp) -> None:
+    app.selected_id = "bid"
+    app.bots = {"bid": {"instance": None}}
+    app._stop_bot_async = MagicMock()
+    app._stop_current()
+    app._stop_bot_async.assert_not_called()
+
+
+def test_stop_current_dispatches_async_stop(app: gui.SelfbotManagerApp, sync_thread: None) -> None:
+    inst = MagicMock()
+    app.selected_id = "bid"
+    app.bots = {"bid": {"instance": inst}}
+    app.stop_btn = MagicMock()
+    app._refresh_action_buttons = MagicMock()
+    app._stop_current()
+    # stop button is disabled while shutdown runs, then restored.
+    states = [c.kwargs.get("state") for c in app.stop_btn.configure.call_args_list]
+    assert "disabled" in states
+    # `on_done` was invoked synchronously by sync_thread, which calls
+    # `_refresh_action_buttons` when the bot is still selected.
+    app._refresh_action_buttons.assert_called_once()
+
+
+def test_stop_current_skips_refresh_when_selection_changed(
+    app: gui.SelfbotManagerApp, sync_thread: None
+) -> None:
+    inst = MagicMock()
+    app.selected_id = "bid"
+    app.bots = {"bid": {"instance": inst}}
+    app.stop_btn = MagicMock()
+    app._refresh_action_buttons = MagicMock()
+
+    real_after = app.after
+
+    def _after_then_switch(delay: Any, fn: Any = None, *args: Any) -> Any:
+        # Simulate the user switching bots mid-stop: the on_done callback
+        # captures the original bid and now sees a mismatched selection.
+        app.selected_id = "other"
+        if fn is not None:
+            return fn(*args)
+        return None
+
+    app.after = _after_then_switch
+    app._stop_current()
+    app._refresh_action_buttons.assert_not_called()
+    # Restore for fixture cleanliness.
+    app.after = real_after
