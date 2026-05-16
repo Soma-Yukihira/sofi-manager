@@ -1,6 +1,8 @@
 import unittest
+from types import SimpleNamespace
 
 from sofi_manager.parsing import (
+    extract_full_text,
     format_drop_recipients,
     is_cooldown_message,
     is_drop_trigger,
@@ -154,6 +156,93 @@ class TriggerDetectionTests(unittest.TestCase):
 
     def test_cooldown_negative(self):
         self.assertFalse(is_cooldown_message("dropping cards"))
+
+
+class ExtractFullTextTests(unittest.TestCase):
+    """Cover the embed-walk in parsing.extract_full_text.
+
+    SOFI sometimes wraps the card list in an embed (title / description /
+    fields / footer); extract_full_text flattens content + every embed into
+    a single string the regex parsers can chew on. We build SimpleNamespace
+    stand-ins for discord.Message + discord.Embed so the test is fully
+    in-process and doesn't import the discord-py library at runtime.
+    """
+
+    @staticmethod
+    def _embed(**kwargs):
+        # discord.Embed has explicit attrs for title / description / author /
+        # fields / footer; the parser only reads what's present, so a flexible
+        # SimpleNamespace is enough.
+        kwargs.setdefault("title", None)
+        kwargs.setdefault("description", None)
+        kwargs.setdefault("author", None)
+        kwargs.setdefault("fields", [])
+        kwargs.setdefault("footer", None)
+        return SimpleNamespace(**kwargs)
+
+    @staticmethod
+    def _message(content="", embeds=None):
+        return SimpleNamespace(content=content, embeds=embeds or [])
+
+    def test_returns_content_when_no_embeds(self):
+        msg = self._message(content="hello world")
+        self.assertEqual(extract_full_text(msg), "hello world")
+
+    def test_handles_none_content(self):
+        # discord can give us content=None when the message is embeds-only.
+        msg = self._message(content=None)
+        self.assertEqual(extract_full_text(msg), "")
+
+    def test_concatenates_embed_title_and_description(self):
+        embed = self._embed(title="Drop", description="Pick one")
+        msg = self._message(content="hey", embeds=[embed])
+        self.assertEqual(extract_full_text(msg), "hey\nDrop\nPick one")
+
+    def test_includes_embed_author_name(self):
+        author = SimpleNamespace(name="SOFI")
+        embed = self._embed(author=author)
+        msg = self._message(embeds=[embed])
+        self.assertIn("SOFI", extract_full_text(msg))
+
+    def test_skips_author_without_name(self):
+        # Some embeds carry an author proxy with no name; must not crash.
+        author = SimpleNamespace(name=None)
+        embed = self._embed(author=author)
+        msg = self._message(content="x", embeds=[embed])
+        self.assertEqual(extract_full_text(msg), "x")
+
+    def test_includes_embed_fields(self):
+        fields = [
+            SimpleNamespace(name="Card 1", value="Miku"),
+            SimpleNamespace(name="", value=""),  # empty field — must skip cleanly
+        ]
+        embed = self._embed(fields=fields)
+        msg = self._message(embeds=[embed])
+        text = extract_full_text(msg)
+        self.assertIn("Card 1", text)
+        self.assertIn("Miku", text)
+
+    def test_includes_embed_footer_text(self):
+        footer = SimpleNamespace(text="page 1/3")
+        embed = self._embed(footer=footer)
+        msg = self._message(embeds=[embed])
+        self.assertIn("page 1/3", extract_full_text(msg))
+
+    def test_skips_footer_without_text(self):
+        footer = SimpleNamespace(text=None)
+        embed = self._embed(footer=footer, title="t")
+        msg = self._message(embeds=[embed])
+        self.assertEqual(extract_full_text(msg), "t")
+
+    def test_walks_multiple_embeds(self):
+        msg = self._message(
+            content="prefix",
+            embeds=[
+                self._embed(title="A"),
+                self._embed(title="B", description="B-desc"),
+            ],
+        )
+        self.assertEqual(extract_full_text(msg), "prefix\nA\nB\nB-desc")
 
 
 if __name__ == "__main__":
