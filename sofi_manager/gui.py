@@ -348,6 +348,10 @@ class SelfbotManagerApp(ctk.CTk):
         # Stash post-update banner state for `_show_post_update_banner` to
         # consume once the layout is built. Compute now so the SHAs are
         # captured before any other code touches `settings["last_seen_sha"]`.
+        # Session cache for the changelog modal: same (old, new) pair maps to
+        # the same compare-API result, so reopening from the sidebar link is
+        # instant + saves the unauthenticated 60/h GitHub quota.
+        self._changelog_cache: dict[tuple[str, str], changelog.ChangelogResult] = {}
         self._post_update_old_sha: str | None = None
         last_seen = self.settings.get("last_seen_sha")
         current_sha = self.version_info.sha
@@ -1308,8 +1312,16 @@ class SelfbotManagerApp(ctk.CTk):
             for entry in result.entries:
                 self._render_changelog_entry(scroll, entry)
 
+        cache_key = (old, new)
+        cached = self._changelog_cache.get(cache_key)
+        if cached is not None:
+            render(cached)
+            return
+
         def worker() -> None:
             result = changelog.fetch_changelog(old, new)
+            if result.ok:
+                self._changelog_cache[cache_key] = result
             try:
                 self.after(0, lambda: render(result))
             except Exception:
@@ -1379,21 +1391,85 @@ class SelfbotManagerApp(ctk.CTk):
                 frame = body_holder["frame"]
                 if frame is None:
                     frame = ctk.CTkFrame(row, fg_color="transparent")
-                    ctk.CTkLabel(
-                        frame,
-                        text=entry.body,
-                        text_color=T["text_dim"],
-                        font=ctk.CTkFont(size=11),
-                        anchor="w",
-                        justify="left",
-                        wraplength=580,
-                    ).pack(anchor="w", padx=30, pady=(0, 6))
+                    self._render_changelog_body(frame, entry.body)
                     body_holder["frame"] = frame
                 frame.pack(fill="x")
                 caret.configure(text="▾ ")
                 body_holder["open"] = True
 
             caret.bind("<Button-1>", toggle)
+
+    def _render_changelog_body(self, parent: Any, body: str) -> None:
+        """Render a commit body as styled blocks (headings, bullets, paragraphs).
+
+        Falls back to a single dim label if the body parses to nothing —
+        keeps the modal robust against an empty or all-whitespace body
+        slipping through `has_body`.
+        """
+        T = self.theme
+        blocks = changelog.render_body(body)
+        if not blocks:
+            ctk.CTkLabel(
+                parent,
+                text=body,
+                text_color=T["text_dim"],
+                font=ctk.CTkFont(size=11),
+                anchor="w",
+                justify="left",
+                wraplength=580,
+            ).pack(anchor="w", padx=30, pady=(0, 6))
+            return
+
+        last_index = len(blocks) - 1
+        for i, block in enumerate(blocks):
+            bottom_pad = 6 if i == last_index else 0
+            if block.kind == "blank":
+                # CTkFrame with explicit height gives a consistent vertical
+                # rhythm without relying on label-internal padding quirks.
+                ctk.CTkFrame(parent, fg_color="transparent", height=4).pack(fill="x", padx=30)
+                continue
+            if block.kind == "heading":
+                size = 13 if block.level <= 1 else 12
+                ctk.CTkLabel(
+                    parent,
+                    text=block.text,
+                    text_color=T["accent"],
+                    font=ctk.CTkFont(size=size, weight="bold"),
+                    anchor="w",
+                    justify="left",
+                ).pack(anchor="w", padx=30, pady=(4, 2))
+                continue
+            if block.kind == "bullet":
+                indent = 30 + 14 * block.level
+                row = ctk.CTkFrame(parent, fg_color="transparent")
+                row.pack(fill="x", padx=(indent, 0), pady=(0, bottom_pad))
+                ctk.CTkLabel(
+                    row,
+                    text="•",
+                    text_color=T["accent_dim"],
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    width=12,
+                ).pack(side="left", anchor="n")
+                ctk.CTkLabel(
+                    row,
+                    text=block.text,
+                    text_color=T["text_dim"],
+                    font=ctk.CTkFont(size=11),
+                    anchor="w",
+                    justify="left",
+                    wraplength=560 - 14 * block.level,
+                ).pack(side="left", fill="x", expand=True, padx=(2, 0))
+                continue
+            # paragraph
+            ctk.CTkLabel(
+                parent,
+                text=block.text,
+                text_color=T["text_dim"],
+                font=ctk.CTkFont(size=11),
+                anchor="w",
+                justify="left",
+                wraplength=580,
+            ).pack(anchor="w", padx=30, pady=(0, bottom_pad))
 
     def _safe_open_url(self, url: str) -> None:
         try:
