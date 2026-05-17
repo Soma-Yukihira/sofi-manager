@@ -1886,3 +1886,548 @@ def test_stop_current_skips_refresh_when_selection_changed(
     app._refresh_action_buttons.assert_not_called()
     # Restore for fixture cleanliness.
     app.after = real_after
+
+
+# ---------------------------------------------------------------------------
+# Small exception-swallow paths
+# ---------------------------------------------------------------------------
+
+
+def test_check_updates_now_swallows_btn_configure_error(
+    app: gui.SelfbotManagerApp,
+    sync_thread: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # btn.configure raises when toggling to "disabled" — must be swallowed
+    # so the worker still dispatches.
+    monkeypatch.setattr(gui.updater, "skip_reason", lambda: None)
+    monkeypatch.setattr(gui.updater, "fetch_and_status", lambda: {"state": "uptodate", "behind": 0})
+    btn = MagicMock()
+    btn.configure.side_effect = RuntimeError("destroyed")
+    app.check_updates_btn = btn
+    app._on_check_updates_result = MagicMock()
+    app._check_updates_now()
+    app._on_check_updates_result.assert_called_once()
+
+
+def test_on_check_updates_result_swallows_btn_configure_error(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    btn = MagicMock()
+    btn.configure.side_effect = RuntimeError("destroyed")
+    app.check_updates_btn = btn
+    # Dispatched path: state uptodate with no info -> messagebox branch.
+    with patch.object(gui.messagebox, "showinfo"):
+        app._on_check_updates_result({"state": "uptodate", "behind": 0})
+
+
+def test_dismiss_db_migration_banner_swallows_exception(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app.db_migration_banner = MagicMock()
+    app.db_migration_banner.grid_remove.side_effect = RuntimeError("gone")
+    # No raise.
+    app._dismiss_db_migration_banner()
+
+
+def test_dismiss_post_update_banner_swallows_exception(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app.post_update_banner = MagicMock()
+    app.post_update_banner.grid_remove.side_effect = RuntimeError("gone")
+    # No raise.
+    app._dismiss_post_update_banner()
+
+
+# ---------------------------------------------------------------------------
+# _stop_all_async _fire swallows after() error
+# ---------------------------------------------------------------------------
+
+
+def test_stop_all_async_fire_swallows_after_error(
+    app: gui.SelfbotManagerApp, sync_thread: None
+) -> None:
+    inst = MagicMock()
+    app.bots = {"a": {"instance": inst}}
+    done = MagicMock()
+
+    # Only the inner `after(0, then)` inside `_fire` must raise; the outer
+    # max_wait scheduling call still succeeds (otherwise the exception
+    # escapes before `_fire` is even entered).
+    def _after(delay: Any, fn: Any = None, *args: Any) -> Any:
+        if delay == 0 and fn is done:
+            raise RuntimeError("destroyed")
+        # Outer ceiling call: run synchronously so `_fire` is exercised.
+        if fn is not None:
+            return fn(*args)
+        return None
+
+    app.after = _after
+    # No raise.
+    app._stop_all_async(then=done)
+    inst.stop.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _on_stats_chart_click
+# ---------------------------------------------------------------------------
+
+
+def test_on_stats_chart_click_hits_bucket(app: gui.SelfbotManagerApp) -> None:
+    app._stats_bar_hits = [
+        (0.0, 10.0, 1_700_000_000),
+        (10.0, 20.0, 1_700_086_400),
+        (20.0, 30.0, 1_700_172_800),
+    ]
+    app._open_grabs_for_day = MagicMock()
+    event = SimpleNamespace(x=15.0)
+    app._on_stats_chart_click(event)
+    app._open_grabs_for_day.assert_called_once_with(1_700_086_400)
+
+
+def test_on_stats_chart_click_miss_returns_silently(
+    app: gui.SelfbotManagerApp,
+) -> None:
+    app._stats_bar_hits = [(0.0, 10.0, 1_700_000_000)]
+    app._open_grabs_for_day = MagicMock()
+    event = SimpleNamespace(x=99.0)
+    app._on_stats_chart_click(event)
+    app._open_grabs_for_day.assert_not_called()
+
+
+def test_on_stats_chart_click_empty_hits(app: gui.SelfbotManagerApp) -> None:
+    app._stats_bar_hits = []
+    app._open_grabs_for_day = MagicMock()
+    event = SimpleNamespace(x=5.0)
+    app._on_stats_chart_click(event)
+    app._open_grabs_for_day.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _start_current
+# ---------------------------------------------------------------------------
+
+
+def test_start_current_noop_when_no_selection(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app.selected_id = None
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._start_current()
+    app._collect_form_into_config.assert_not_called()
+    app._persist.assert_not_called()
+
+
+def test_start_current_skips_when_already_running(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    existing = SimpleNamespace(status=SelfBot.STATUS_RUNNING)
+    app.selected_id = "bid"
+    app.bots = {"bid": {"config": {"name": "alpha"}, "instance": existing}}
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    # Don't patch gui.SelfBot — patching it would replace STATUS_RUNNING with
+    # an auto-generated MagicMock attr that wouldn't match `existing.status`.
+    # Instead, assert that `instance.start` was never called (proxy for the
+    # skip branch).
+    app._refresh_action_buttons = MagicMock()
+    app.tabs = MagicMock()
+    app._start_current()
+    # Form collected + persisted (always), but no new SelfBot instantiation.
+    app._collect_form_into_config.assert_called_once_with("bid")
+    app._persist.assert_called_once()
+    # The instance is still the same SimpleNamespace; no replacement made.
+    assert app.bots["bid"]["instance"] is existing
+
+
+def test_start_current_skips_when_already_starting(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    existing = SimpleNamespace(status=SelfBot.STATUS_STARTING)
+    app.selected_id = "bid"
+    app.bots = {"bid": {"config": {"name": "alpha"}, "instance": existing}}
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._refresh_action_buttons = MagicMock()
+    app.tabs = MagicMock()
+    app._start_current()
+    assert app.bots["bid"]["instance"] is existing
+
+
+def test_start_current_launches_new_instance(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = {"name": "alpha"}
+    app.selected_id = "bid"
+    app.bots = {"bid": {"config": cfg, "instance": None}}
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._refresh_action_buttons = MagicMock()
+    app.tabs = MagicMock()
+    app._on_bot_status_change = MagicMock()
+
+    created = MagicMock(name="instance")
+    factory = MagicMock(return_value=created)
+    monkeypatch.setattr(gui, "SelfBot", factory)
+
+    app._start_current()
+
+    factory.assert_called_once_with(cfg)
+    # status_callback wired and invokes _on_bot_status_change via after(0, ...).
+    created.start.assert_called_once()
+    assert app.bots["bid"]["instance"] is created
+    app._refresh_action_buttons.assert_called_once()
+    app.tabs.set.assert_called_once_with("  Logs  ")
+    # The status_callback closes over bid + dispatches through after(0).
+    created.status_callback("running")
+    app._on_bot_status_change.assert_called_once_with("bid", "running")
+
+
+def test_start_current_replaces_dead_instance(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # If the existing instance is in a stopped/error status, a fresh one is
+    # constructed and replaces it.
+    old = SimpleNamespace(status="stopped")
+    app.selected_id = "bid"
+    app.bots = {"bid": {"config": {"name": "alpha"}, "instance": old}}
+    app._collect_form_into_config = MagicMock()
+    app._persist = MagicMock()
+    app._refresh_action_buttons = MagicMock()
+    app.tabs = MagicMock()
+
+    created = MagicMock(name="instance")
+    factory = MagicMock(return_value=created)
+    monkeypatch.setattr(gui, "SelfBot", factory)
+
+    app._start_current()
+
+    factory.assert_called_once()
+    assert app.bots["bid"]["instance"] is created
+    created.start.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Form-builder helpers: _add_field / _add_field_grid / _add_textarea
+# ---------------------------------------------------------------------------
+
+
+def _stub_frame(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Replace gui.ctk.CTkFrame so widget builders don't touch real Tk."""
+    factory = MagicMock(name="CTkFrame_factory")
+    monkeypatch.setattr(gui.ctk, "CTkFrame", factory)
+    return factory
+
+
+def test_add_field_registers_entry_in_cfg_widgets(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_frame(monkeypatch)
+    label = MagicMock()
+    entry = MagicMock()
+    app._mk_label = MagicMock(return_value=label)
+    app._mk_entry = MagicMock(return_value=entry)
+    app.cfg_widgets = {}
+
+    parent = MagicMock()
+    app._add_field(parent, "token", "Token", placeholder="ph", show="*", numeric=True)
+
+    app._mk_label.assert_called_once()
+    # `_mk_entry` is invoked with the same show/placeholder pass-through.
+    kwargs = app._mk_entry.call_args.kwargs
+    assert kwargs.get("show") == "*"
+    assert kwargs.get("placeholder") == "ph"
+    # entry is recorded under the given key, marked numeric.
+    assert app.cfg_widgets["token"] is entry
+    assert entry._numeric is True
+
+
+def test_add_field_default_non_numeric(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_frame(monkeypatch)
+    app._mk_label = MagicMock()
+    entry = MagicMock()
+    app._mk_entry = MagicMock(return_value=entry)
+    app.cfg_widgets = {}
+    app._add_field(MagicMock(), "name", "Nom")
+    assert app.cfg_widgets["name"] is entry
+    assert entry._numeric is False
+
+
+def test_add_field_grid_registers_entry(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_frame(monkeypatch)
+    app._mk_label = MagicMock()
+    entry = MagicMock()
+    app._mk_entry = MagicMock(return_value=entry)
+    app.cfg_widgets = {}
+    app._add_field_grid(MagicMock(), 0, "rarity_norm", "Norm", numeric=True)
+    assert app.cfg_widgets["rarity_norm"] is entry
+    assert entry._numeric is True
+
+
+def test_add_field_grid_second_column_padding(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Second column (col=1) uses `padx=(8, 0)` — exercises the conditional.
+    frame_factory = _stub_frame(monkeypatch)
+    app._mk_label = MagicMock()
+    app._mk_entry = MagicMock(return_value=MagicMock())
+    app.cfg_widgets = {}
+    app._add_field_grid(MagicMock(), 1, "k", "L")
+    # The inner wrap.grid() call gets the (8, 0) padx tuple.
+    wrap = frame_factory.return_value
+    grid_kwargs = wrap.grid.call_args.kwargs
+    assert grid_kwargs["padx"] == (8, 0)
+
+
+def test_add_textarea_registers_textbox(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_frame(monkeypatch)
+    app._mk_label = MagicMock()
+    tb = MagicMock()
+    app._mk_textbox = MagicMock(return_value=tb)
+    app.cfg_widgets = {}
+    app._add_textarea(MagicMock(), "notes", "Notes", height=200)
+    app._mk_textbox.assert_called_once()
+    assert app._mk_textbox.call_args.kwargs.get("height") == 200
+    assert app.cfg_widgets["notes"] is tb
+
+
+# ---------------------------------------------------------------------------
+# _make_log_widget — Tk Text + CTkScrollbar wiring
+# ---------------------------------------------------------------------------
+
+
+def test_make_log_widget_builds_text_and_scrollbar(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text_widget = MagicMock(name="tk.Text")
+    text_factory = MagicMock(return_value=text_widget)
+    scrollbar = MagicMock(name="CTkScrollbar")
+    scrollbar_factory = MagicMock(return_value=scrollbar)
+    monkeypatch.setattr(gui.tk, "Text", text_factory)
+    monkeypatch.setattr(gui.ctk, "CTkScrollbar", scrollbar_factory)
+    app.logs_holder = MagicMock()
+
+    tb, sb = app._make_log_widget()
+
+    assert tb is text_widget
+    assert sb is scrollbar
+    text_factory.assert_called_once()
+    scrollbar_factory.assert_called_once()
+    # Every LEVEL_KEYS entry yielded a tag_configure call.
+    expected_levels = set(gui.LEVEL_KEYS.keys()) | {"system"}
+    actual_levels = {c.args[0] for c in text_widget.tag_configure.call_args_list}
+    assert expected_levels <= actual_levels
+    # `system` tag is bolded.
+    system_calls = [c for c in text_widget.tag_configure.call_args_list if c.args[0] == "system"]
+    assert system_calls
+    # `state="disabled"` is the final configure call so the widget is read-only
+    # by default — the caller flips it back to "normal" while writing.
+    text_widget.configure.assert_any_call(yscrollcommand=scrollbar.set, state="disabled")
+
+
+def test_make_log_widget_scrollbar_yview_wired(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text_widget = MagicMock()
+    monkeypatch.setattr(gui.tk, "Text", lambda *a, **kw: text_widget)
+    scrollbar_factory = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(gui.ctk, "CTkScrollbar", scrollbar_factory)
+    app.logs_holder = MagicMock()
+
+    app._make_log_widget()
+
+    # Scrollbar `command` argument is the text widget's `yview` method.
+    sb_kwargs = scrollbar_factory.call_args.kwargs
+    assert sb_kwargs.get("command") is text_widget.yview
+
+
+# ---------------------------------------------------------------------------
+# _render_changelog_body — markdown-style block rendering
+# ---------------------------------------------------------------------------
+
+
+def _stub_widgets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[MagicMock, MagicMock, MagicMock, list[MagicMock], list[MagicMock]]:
+    """Replace ctk.CTkLabel/CTkFrame/CTkFont with factories that yield a
+    fresh MagicMock per call (so per-widget interactions stay independent).
+    Returns (label_factory, frame_factory, font_factory, label_instances,
+    frame_instances) — instance lists are populated in call order."""
+    label_instances: list[MagicMock] = []
+    frame_instances: list[MagicMock] = []
+
+    def _label(*_a: Any, **_kw: Any) -> MagicMock:
+        m = MagicMock()
+        label_instances.append(m)
+        return m
+
+    def _frame(*_a: Any, **_kw: Any) -> MagicMock:
+        m = MagicMock()
+        frame_instances.append(m)
+        return m
+
+    label_factory = MagicMock(name="CTkLabel", side_effect=_label)
+    frame_factory = MagicMock(name="CTkFrame", side_effect=_frame)
+    font_factory = MagicMock(name="CTkFont", side_effect=lambda *a, **kw: MagicMock())
+    monkeypatch.setattr(gui.ctk, "CTkLabel", label_factory)
+    monkeypatch.setattr(gui.ctk, "CTkFrame", frame_factory)
+    monkeypatch.setattr(gui.ctk, "CTkFont", font_factory)
+    return label_factory, frame_factory, font_factory, label_instances, frame_instances
+
+
+def test_render_changelog_body_empty_renders_fallback(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    label_factory, _frame_factory, _font_factory, _labels, _frames = _stub_widgets(monkeypatch)
+    # `render_body` returns an empty tuple → fallback dim label.
+    monkeypatch.setattr(gui.changelog, "render_body", lambda _b: ())
+    app._render_changelog_body(MagicMock(), "raw fallback body")
+    label_factory.assert_called_once()
+    kwargs = label_factory.call_args.kwargs
+    assert kwargs.get("text") == "raw fallback body"
+
+
+def test_render_changelog_body_renders_all_block_kinds(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    label_factory, frame_factory, _font_factory, _labels, _frames = _stub_widgets(monkeypatch)
+    Block = gui.changelog.Block  # frozen dataclass
+    blocks = (
+        Block(kind="blank", text="", level=0),
+        Block(kind="heading", text="Top-level", level=1),
+        Block(kind="heading", text="Sub-heading", level=3),  # size 12 branch
+        Block(kind="bullet", text="point-A", level=0),
+        Block(kind="bullet", text="nested", level=2),
+        Block(kind="paragraph", text="prose body", level=0),
+    )
+    monkeypatch.setattr(gui.changelog, "render_body", lambda _b: blocks)
+
+    app._render_changelog_body(MagicMock(), "body-text")
+
+    # Frames built: one for the blank spacer + one for each bullet row.
+    assert frame_factory.call_count == 1 + 2  # 1 blank + 2 bullets
+    # Labels built: 2 headings + (bullet glyph + bullet text) * 2 + 1 paragraph
+    assert label_factory.call_count == 2 + 4 + 1
+    # Heading text values present.
+    texts = [c.kwargs.get("text") for c in label_factory.call_args_list]
+    assert "Top-level" in texts
+    assert "Sub-heading" in texts
+    assert "point-A" in texts
+    assert "nested" in texts
+    assert "prose body" in texts
+
+
+# ---------------------------------------------------------------------------
+# _render_changelog_entry — caret/title row + optional collapsible body
+# ---------------------------------------------------------------------------
+
+
+def test_render_changelog_entry_no_body_skips_toggle(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    label_factory, frame_factory, _font_factory, _labels, _frames = _stub_widgets(monkeypatch)
+    entry = gui.changelog.ChangelogEntry(
+        sha="abc1234",
+        title="Short title",
+        body="",
+        html_url="https://example.test/c/abc1234",
+    )
+    app._render_changelog_entry(MagicMock(), entry)
+    # Two frames (outer row + header), no body frame because body is empty.
+    assert frame_factory.call_count == 2
+    # Caret text uses the inert dim glyph when no body — first label built.
+    caret_kwargs = label_factory.call_args_list[0].kwargs
+    assert caret_kwargs.get("text") == "  "
+
+
+def test_render_changelog_entry_with_body_toggle_open_and_close(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _label_factory, _frame_factory, _font_factory, labels, frames = _stub_widgets(monkeypatch)
+    # `_render_changelog_body` is exercised separately — stub it out so the
+    # toggle handler is what we test here.
+    app._render_changelog_body = MagicMock()
+    entry = gui.changelog.ChangelogEntry(
+        sha="abc1234",
+        title="With body",
+        body="some body text",
+        html_url="https://example.test/c/abc1234",
+    )
+
+    app._render_changelog_entry(MagicMock(), entry)
+
+    # `caret` is the first CTkLabel built inside _render_changelog_entry.
+    caret = labels[0]
+    bind_call = [c for c in caret.bind.call_args_list if c.args[0] == "<Button-1>"]
+    assert bind_call, "caret <Button-1> binding missing"
+    toggle = bind_call[0].args[1]
+
+    # First click: opens — body frame created and _render_changelog_body
+    # invoked once. The body frame is the 3rd frame built (row, header, body).
+    toggle()
+    app._render_changelog_body.assert_called_once()
+    body_frame = frames[2]
+    body_frame.pack.assert_called()
+    # Second click: closes — pack_forget on the body frame.
+    toggle()
+    body_frame.pack_forget.assert_called()
+    # Third click: re-opens — frame already exists, no second body render.
+    toggle()
+    assert app._render_changelog_body.call_count == 1
+
+
+def test_render_changelog_entry_title_click_opens_url(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _label_factory, _frame_factory, _font_factory, labels, _frames = _stub_widgets(monkeypatch)
+    entry = gui.changelog.ChangelogEntry(
+        sha="abc1234",
+        title="T",
+        body="",
+        html_url="https://example.test/c/abc1234",
+    )
+    app._safe_open_url = MagicMock()
+
+    app._render_changelog_entry(MagicMock(), entry)
+
+    # The title label is the second CTkLabel built (caret, title, sha_label).
+    title = labels[1]
+    bind_calls = [c for c in title.bind.call_args_list if c.args[0] == "<Button-1>"]
+    assert bind_calls
+    # Trigger the handler.
+    bind_calls[0].args[1](None)
+    app._safe_open_url.assert_called_once_with("https://example.test/c/abc1234")
+
+
+def test_render_changelog_entry_swallows_cursor_config_errors(
+    app: gui.SelfbotManagerApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    label_instances: list[MagicMock] = []
+
+    def _label(*_a: Any, **_kw: Any) -> MagicMock:
+        m = MagicMock()
+        # Every label's `configure(cursor=...)` call raises so both
+        # exception-swallow branches (title + caret) are exercised.
+        m.configure.side_effect = RuntimeError("no cursor")
+        label_instances.append(m)
+        return m
+
+    monkeypatch.setattr(gui.ctk, "CTkLabel", MagicMock(side_effect=_label))
+    monkeypatch.setattr(gui.ctk, "CTkFrame", MagicMock(side_effect=lambda *a, **kw: MagicMock()))
+    monkeypatch.setattr(gui.ctk, "CTkFont", MagicMock(side_effect=lambda *a, **kw: MagicMock()))
+
+    entry = gui.changelog.ChangelogEntry(
+        sha="abc1234",
+        title="T",
+        body="body",
+        html_url="https://example.test/",
+    )
+    # No raise.
+    app._render_changelog_entry(MagicMock(), entry)
